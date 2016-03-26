@@ -237,6 +237,13 @@ int serialize(PyObject* val, Obj* obj) {
           }
         }
         break;
+      case NPY_INT64: {
+          npy_int64* buffer = (npy_int64*) PyArray_DATA(array);
+          for (npy_intp i = 0; i < size; ++i) {
+            data->add_int_data(buffer[i]);
+          }
+        }
+        break;
       case NPY_OBJECT: { // FIXME(pcm): Support arbitrary python objects, not only objrefs
           PyArrayIterObject* iter = (PyArrayIterObject*) PyArray_IterNew((PyObject*)array);
           while (PyArray_ITER_NOTDONE(iter)) {
@@ -322,6 +329,13 @@ PyObject* deserialize(const Obj& obj) {
       switch (array.dtype()) {
         case NPY_INT8: {
             npy_int8* buffer = (npy_int8*) PyArray_DATA(pyarray);
+            for (npy_intp i = 0; i < size; ++i) {
+              buffer[i] = array.int_data(i);
+            }
+          }
+          break;
+        case NPY_INT64: {
+            npy_int64* buffer = (npy_int64*) PyArray_DATA(pyarray);
             for (npy_intp i = 0; i < size; ++i) {
               buffer[i] = array.int_data(i);
             }

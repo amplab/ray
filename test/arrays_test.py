@@ -191,6 +191,17 @@ class ArraysDistTest(unittest.TestCase):
     z = dist.dot(x, y)
     self.assertTrue(np.allclose(orchpy.pull(dist.assemble(z)), np.dot(orchpy.pull(dist.assemble(x)), orchpy.pull(dist.assemble(y)))))
 
+    x = single.random.normal([25, 49])
+    y = single.random.normal([13, 49])
+    z = single.random.normal([100, 49])
+    w = single.random.normal([2, 49])
+    shapes = orchpy.pull(dist.shape(np.array([x, y, z, w])))
+    self.assertTrue(np.array([shape[0] for shape in shapes]).sum() == 25 + 13 + 100 + 2)
+    perm = np.random.permutation(25 + 13 + 100 + 2)
+    result = np.vstack([orchpy.pull(x), orchpy.pull(y), orchpy.pull(z), orchpy.pull(w)])
+    u = dist.gather(np.array([x, y, z, w], dtype=object), perm, 0)
+    self.assertTrue(np.alltrue(result[perm,:] == orchpy.pull(u)))
+
     services.cleanup()
 
 if __name__ == '__main__':

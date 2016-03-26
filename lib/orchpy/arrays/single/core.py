@@ -49,3 +49,11 @@ def tril(a):
 @op.distributed([np.ndarray], [np.ndarray])
 def triu(a):
   return np.triu(a)
+
+@op.distributed([np.ndarray, np.ndarray], [np.ndarray])
+def gather(a, indices):
+  return a[indices]
+
+@op.distributed([np.ndarray], [tuple])
+def shape(a):
+  return a.shape

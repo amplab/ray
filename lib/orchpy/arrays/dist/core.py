@@ -4,7 +4,8 @@ import arrays.single as single
 import orchpy as op
 
 __all__ = ["BLOCK_SIZE", "DistArray", "assemble", "zeros", "ones", "copy",
-           "eye", "triu", "tril", "blockwise_dot", "dot", "block_column", "block_row"]
+           "eye", "triu", "tril", "blockwise_dot", "dot", "block_column",
+           "block_row", "gather", "shape"]
 
 BLOCK_SIZE = 10
 
@@ -202,3 +203,23 @@ def block_row(a, row):
   result = DistArray()
   result.construct(shape, a.objrefs[row, :])
   return result
+
+@op.distributed([np.ndarray], [List[tuple]])
+def shape(objrefs):
+  shapes = [single.shape(objref) for objref in objrefs]
+  return [op.pull(shape) for shape in shapes]
+
+@op.distributed([np.ndarray, np.ndarray, int], [np.ndarray])
+def gather(objrefs, indices, axis):
+  perm = indices.argsort()
+  sorted_indices = indices[perm]
+  shapes = op.pull(shape(objrefs))
+  cumsizes = np.zeros(len(shapes) + 1, dtype="int64") # + 1 for leading zero
+  np.array([s[axis] for s in shapes]).cumsum(out=cumsizes[1:])
+  ranges = np.searchsorted(sorted_indices, cumsizes[1:])
+  idx = 0
+  results = []
+  for i, nextidx in enumerate(ranges):
+      results.append(single.gather(objrefs[i], sorted_indices[idx:nextidx] - cumsizes[i]))
+      idx = nextidx
+  return np.vstack([op.pull(r) for r in results])[indices]
