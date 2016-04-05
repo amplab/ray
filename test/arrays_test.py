@@ -76,7 +76,7 @@ class ArraysDistTest(unittest.TestCase):
   def testMethods(self):
     test_dir = os.path.dirname(os.path.abspath(__file__))
     test_path = os.path.join(test_dir, "testrecv.py")
-    services.start_cluster(3)
+    services.start_cluster(3, test_path)
 
     x = dist.zeros([9, 25, 51], "float")
     self.assertTrue(np.alltrue(orchpy.pull(dist.assemble(x)) == np.zeros([9, 25, 51])))
