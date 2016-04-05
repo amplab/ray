@@ -74,7 +74,7 @@ def start_worker(test_path, scheduler_address, objstore_address, worker_address)
   all_processes.append((p, worker_address))
 
 def start_cluster(num_workers=0, worker_path=None):
-  if num_workers > 0 and test_path is None:
+  if num_workers > 0 and worker_path is None:
     raise Exception("Attempting to start a cluster with some workers, but `worker_path` is None.")
   scheduler_address = address(IP_ADDRESS, new_scheduler_port())
   objstore_address = address(IP_ADDRESS, new_objstore_port())
@@ -86,6 +86,6 @@ def start_cluster(num_workers=0, worker_path=None):
   w = worker.Worker()
   orchpy.connect(scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()), w)
   for _ in range(num_workers):
-    start_worker(test_path, scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()))
+    start_worker(worker_path, scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()))
   time.sleep(0.2)
   return w
