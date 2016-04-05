@@ -1,5 +1,6 @@
 import sys
 import argparse
+import numpy as np
 
 import arrays.single as single
 import arrays.dist as dist
