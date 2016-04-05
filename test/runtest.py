@@ -8,22 +8,10 @@ import time
 import subprocess32 as subprocess
 import os
 
-import arrays.single as single
-
 from google.protobuf.text_format import *
 
-from grpc.beta import implementations
 import orchestra_pb2
 import types_pb2
-
-def connect_to_scheduler(host, port):
-  channel = implementations.insecure_channel(host, port)
-  return orchestra_pb2.beta_create_Scheduler_stub(channel)
-
-def connect_to_objstore(host, port):
-  channel = implementations.insecure_channel(host, port)
-  return orchestra_pb2.beta_create_ObjStore_stub(channel)
-
 
 class SerializationTest(unittest.TestCase):
 
