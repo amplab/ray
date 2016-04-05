@@ -3,6 +3,8 @@ import os
 import atexit
 import time
 
+import worker
+
 _services_path = os.path.dirname(os.path.abspath(__file__))
 
 all_processes = []
