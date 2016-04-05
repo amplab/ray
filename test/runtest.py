@@ -56,7 +56,8 @@ class SerializationTest(unittest.TestCase):
 class OrchPyLibTest(unittest.TestCase):
 
     def testOrchPyLib(self):
-      w = services.start_cluster()
+      w = worker.Worker()
+      services.start_cluster(driver_worker=w)
 
       w.put_object(orchpy.lib.ObjRef(0), 'hello world')
       result = w.get_object(orchpy.lib.ObjRef(0))
@@ -69,7 +70,8 @@ class ObjStoreTest(unittest.TestCase):
 
   # Test setting up object stores, transfering data between them and retrieving data to a client
   def testObjStore(self):
-    w = services.start_cluster()
+    w = worker.Worker()
+    services.start_cluster(driver_worker=w)
 
     # pushing and pulling an object shouldn't change it
     for data in ["h", "h" * 10000, 0, 0.0]:
@@ -91,7 +93,8 @@ class SchedulerTest(unittest.TestCase):
   def testCall(self):
     test_dir = os.path.dirname(os.path.abspath(__file__))
     test_path = os.path.join(test_dir, "testrecv.py")
-    w = services.start_cluster(1, test_path)
+    w = worker.Worker()
+    services.start_cluster(driver_worker=w, num_workers=1, worker_path=test_path)
 
     value_before = "test_string"
     objref = w.remote_call("__main__.print_string", [value_before])
@@ -108,7 +111,8 @@ class SchedulerTest(unittest.TestCase):
 class WorkerTest(unittest.TestCase):
 
   def testPushPull(self):
-    w = services.start_cluster()
+    w = worker.Worker()
+    services.start_cluster(driver_worker=w)
 
     for i in range(100):
       value_before = i * 10 ** 6

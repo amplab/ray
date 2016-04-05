@@ -21,7 +21,7 @@ class ArraysSingleTest(unittest.TestCase):
   def testMethods(self):
     test_dir = os.path.dirname(os.path.abspath(__file__))
     test_path = os.path.join(test_dir, "testrecv.py")
-    services.start_cluster(1, test_path)
+    services.start_cluster(num_workers=1, worker_path=test_path)
 
     # test eye
     ref = single.eye(3, "float")
@@ -63,7 +63,7 @@ class ArraysDistTest(unittest.TestCase):
   def testAssemble(self):
     test_dir = os.path.dirname(os.path.abspath(__file__))
     test_path = os.path.join(test_dir, "testrecv.py")
-    services.start_cluster(1, test_path)
+    services.start_cluster(num_workers=1, worker_path=test_path)
 
     a = single.ones([dist.BLOCK_SIZE, dist.BLOCK_SIZE], "float")
     b = single.zeros([dist.BLOCK_SIZE, dist.BLOCK_SIZE], "float")
@@ -76,7 +76,7 @@ class ArraysDistTest(unittest.TestCase):
   def testMethods(self):
     test_dir = os.path.dirname(os.path.abspath(__file__))
     test_path = os.path.join(test_dir, "testrecv.py")
-    services.start_cluster(3, test_path)
+    services.start_cluster(num_workers=3, worker_path=test_path)
 
     x = dist.zeros([9, 25, 51], "float")
     self.assertTrue(np.alltrue(orchpy.pull(dist.assemble(x)) == np.zeros([9, 25, 51])))
