@@ -74,7 +74,7 @@ def start_cluster(num_workers=0, worker_path=None):
   if num_workers > 0 and test_path is None:
     raise Exception("Attempting to start a cluster with some workers, but `worker_path` is None.")
   scheduler_address = address(IP_ADDRESS, new_scheduler_port())
-  objstore_port = address(IP_ADDRESS, new_objstore_port())
+  objstore_address = address(IP_ADDRESS, new_objstore_port())
   start_scheduler(scheduler_address)
   time.sleep(0.1)
   start_objstore(scheduler_address, objstore_address)
