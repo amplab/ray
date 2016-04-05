@@ -82,10 +82,9 @@ def start_cluster(num_workers=0, worker_path=None):
   time.sleep(0.1)
   start_objstore(scheduler_address, objstore_address)
   time.sleep(0.2)
-  time.sleep(0.2)
   w = worker.Worker()
   orchpy.connect(scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()), w)
   for _ in range(num_workers):
     start_worker(worker_path, scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()))
-  time.sleep(0.2)
+  time.sleep(0.3)
   return w
