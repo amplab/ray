@@ -82,7 +82,10 @@ def start_cluster(driver_worker=None, num_workers=0, worker_path=None):
   time.sleep(0.1)
   start_objstore(scheduler_address, objstore_address)
   time.sleep(0.2)
-  orchpy.connect(scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()), driver_worker)
+  if driver_worker is not None:
+    orchpy.connect(scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()), driver_worker)
+  else:
+    orchpy.connect(scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()))
   for _ in range(num_workers):
     start_worker(worker_path, scheduler_address, objstore_address, address(IP_ADDRESS, new_worker_port()))
   time.sleep(0.3)
