@@ -3,7 +3,7 @@ import os
 import atexit
 import time
 
-import worker
+import orchpy.worker as worker
 
 _services_path = os.path.dirname(os.path.abspath(__file__))
 
