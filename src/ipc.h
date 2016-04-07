@@ -87,7 +87,7 @@ private:
 // DONE: workerid, objref -> ():
 // worker tells the object store that an object has been finalized
 
-enum ObjRequestType {ALLOC = 0, GET = 1, DONE = 2};
+enum ObjRequestType {ALLOC = 0, GET = 1, DONE = 2, OBJSTORE_DONE};
 
 struct ObjRequest {
   WorkerId workerid; // worker that sends the request

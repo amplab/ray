@@ -56,6 +56,7 @@ ObjRef Worker::get_objref() {
 }
 
 slice Worker::get_object(ObjRef objref) {
+  // get_object assumes that objref is a canonical objref
   ObjRequest request;
   request.workerid = workerid_;
   request.type = ObjRequestType::GET;
@@ -124,6 +125,15 @@ bool Worker::is_arrow(ObjRef objref) {
   ObjHandle result;
   receive_obj_queue_.receive(&result);
   return result.metadata_offset() != 0;
+}
+
+void Worker::alias_objrefs(ObjRef alias_objref, ObjRef target_objref) {
+  ClientContext context;
+  AliasObjRefsRequest request;
+  request.set_alias_objref(alias_objref);
+  request.set_target_objref(target_objref);
+  AckReply reply;
+  scheduler_stub_->AliasObjRefs(&context, request, &reply);
 }
 
 void Worker::register_function(const std::string& name, size_t num_return_vals) {
