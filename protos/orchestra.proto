@@ -131,7 +131,7 @@ service ObjStore {
   rpc DeliverObj(DeliverObjRequest) returns (AckReply);
   // Accept incoming data from another object store, as a stream of object chunks
   rpc StreamObj(stream ObjChunk) returns (AckReply);
-  // Notify the object store about objref aliasing
+  // Notify the object store about objref aliasing. This is called by the scheduler
   rpc NotifyAlias(NotifyAliasRequest) returns (AckReply);
   // Get debug info from the object store
   rpc ObjStoreDebugInfo(ObjStoreDebugInfoRequest) returns (ObjStoreDebugInfoReply);

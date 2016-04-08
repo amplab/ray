@@ -73,10 +73,10 @@ Status SchedulerService::AliasObjRefs(ServerContext* context, const AliasObjRefs
 
   {
     std::lock_guard<std::mutex> objstore_lock(target_objrefs_lock_);
-    if (target_objrefs_[alias_objref].size() != 0) {
-      ORCH_LOG(ORCH_FATAL, "internal error: attempting to alias objref " << alias_objref << " with objref " << target_objref << ", but objref " << alias_objref << " has already been aliased with objref " << target_objrefs_[alias_objref][0]);
+    if (target_objrefs_[alias_objref] != UNITIALIZED_ALIAS) {
+      ORCH_LOG(ORCH_FATAL, "internal error: attempting to alias objref " << alias_objref << " with objref " << target_objref << ", but objref " << alias_objref << " has already been aliased with objref " << target_objrefs_[alias_objref]);
     }
-    target_objrefs_[alias_objref].push_back(target_objref);
+    target_objrefs_[alias_objref] = target_objref;
   }
 
   schedule();
@@ -314,19 +314,17 @@ WorkerId SchedulerService::register_worker(const std::string& worker_address, co
 }
 
 ObjRef SchedulerService::register_new_object() {
-  objtable_lock_.lock();
-  ObjRef result = objtable_.size();
-  objtable_.push_back(std::vector<ObjStoreId>());
-  objtable_lock_.unlock();
-
-  target_objrefs_lock_.lock();
-  if (target_objrefs_.size() != result) {
-    ORCH_LOG(ORCH_FATAL, "objtable_ and target_objrefs_ should have the same size, but objtable_.size() = " << objtable_.size() << " and target_objrefs_.size() = " << target_objrefs_.size());
+  // If we don't simultaneously lock objtable_ and target_objrefs_, we will probably get errors.
+  std::lock_guard<std::mutex> objtable_lock(objtable_lock_);
+  std::lock_guard<std::mutex> target_objrefs_lock(target_objrefs_lock_);
+  ObjRef objtable_size = objtable_.size();
+  ObjRef target_objrefs_size = target_objrefs_.size();
+  if (objtable_size != target_objrefs_size) {
+    ORCH_LOG(ORCH_FATAL, "objtable_ and target_objrefs_ should have the same size, but objtable_.size() = " << objtable_size << " and target_objrefs_.size() = " << target_objrefs_size);
   }
-  target_objrefs_.push_back(std::vector<ObjRef>());
-  target_objrefs_lock_.unlock();
-
-  return result;
+  objtable_.push_back(std::vector<ObjStoreId>());
+  target_objrefs_.push_back(UNITIALIZED_ALIAS);
+  return objtable_size;
 }
 
 void SchedulerService::add_location(ObjRef canonical_objref, ObjStoreId objstoreid) {
@@ -350,10 +348,10 @@ void SchedulerService::add_canonical_objref(ObjRef objref) {
   if (objref >= target_objrefs_.size()) {
     ORCH_LOG(ORCH_FATAL, "internal error: attempting to insert objref " << objref << " in target_objrefs_, but target_objrefs_.size() is " << target_objrefs_.size());
   }
-  if (target_objrefs_[objref].size() != 0) {
-    ORCH_LOG(ORCH_FATAL, "internal error: attempting to declare objref " << objref << " as a canonical objref, but target_objrefs_[objref] is not empty. It already has size " << target_objrefs_[objref].size());
+  if (target_objrefs_[objref] != UNITIALIZED_ALIAS) {
+    ORCH_LOG(ORCH_FATAL, "internal error: attempting to declare objref " << objref << " as a canonical objref, but target_objrefs_[objref] is already aliased with objref " << target_objrefs_[objref]);
   }
-  target_objrefs_[objref].push_back(objref);
+  target_objrefs_[objref] = objref;
 }
 
 ObjStoreId SchedulerService::get_store(WorkerId workerid) {
@@ -404,10 +402,10 @@ ObjStoreId SchedulerService::pick_objstore(ObjRef canonical_objref) {
 
 bool SchedulerService::is_canonical(ObjRef objref) {
   std::lock_guard<std::mutex> lock(target_objrefs_lock_);
-  if (target_objrefs_[objref].size() != 1) {
-    ORCH_LOG(ORCH_FATAL, "Attempting to call is_canonical on an objref for which aliasing is not complete or the object is not ready, (objref " << objref << ")");
+  if (target_objrefs_[objref] == UNITIALIZED_ALIAS) {
+    ORCH_LOG(ORCH_FATAL, "Attempting to call is_canonical on an objref for which aliasing is not complete or the object is not ready, target_objrefs_[objref] == UNITIALIZED_ALIAS for objref " << objref << ".");
   }
-  return objref == target_objrefs_[objref][0];
+  return objref == target_objrefs_[objref];
 }
 
 bool SchedulerService::has_canonical_objref(ObjRef objref) {
@@ -417,16 +415,13 @@ bool SchedulerService::has_canonical_objref(ObjRef objref) {
     if (objref_temp >= target_objrefs_.size()) {
       ORCH_LOG(ORCH_FATAL, "Attempting to index target_objrefs_ with objref " << objref_temp << ", but target_objrefs_.size() = " << target_objrefs_.size());
     }
-    if (target_objrefs_[objref_temp].size() > 1) {
-      ORCH_LOG(ORCH_FATAL, "target_objrefs_[objref_temp].size() = " << target_objrefs_[objref_temp].size() << " with objref_temp = " << objref_temp << ", but it should be at most 1");
-    }
-    if (target_objrefs_[objref_temp].size() == 0) {
+    if (target_objrefs_[objref_temp] == UNITIALIZED_ALIAS) {
       return false;
     }
-    if (target_objrefs_[objref_temp][0] == objref_temp) {
+    if (target_objrefs_[objref_temp] == objref_temp) {
       return true;
     }
-    objref_temp = target_objrefs_[objref_temp][0];
+    objref_temp = target_objrefs_[objref_temp];
   }
 }
 
@@ -438,13 +433,13 @@ ObjRef SchedulerService::get_canonical_objref(ObjRef objref) {
     if (objref_temp >= target_objrefs_.size()) {
       ORCH_LOG(ORCH_FATAL, "Attempting to index target_objrefs_ with objref " << objref_temp << ", but target_objrefs_.size() = " << target_objrefs_.size());
     }
-    if (target_objrefs_[objref_temp].size() != 1) {
-      ORCH_LOG(ORCH_FATAL, "target_objrefs_[objref_temp].size() = " << target_objrefs_[objref_temp].size() << " with objref_temp = " << objref_temp << ", but it should be exactly 1");
+    if (target_objrefs_[objref_temp] == UNITIALIZED_ALIAS) {
+      ORCH_LOG(ORCH_FATAL, "Attempting to get canonical objref for objref " << objref << ", which aliases, objref " << objref_temp << ", but target_objrefs_[objref_temp] == UNITIALIZED_ALIAS for objref_temp = " << objref_temp << ".");
     }
-    if (target_objrefs_[objref_temp][0] == objref_temp) {
+    if (target_objrefs_[objref_temp] == objref_temp) {
       return objref_temp;
     }
-    objref_temp = target_objrefs_[objref_temp][0];
+    objref_temp = target_objrefs_[objref_temp];
     ORCH_LOG(ORCH_DEBUG, "Looping in get_canonical_objref.");
   }
 }

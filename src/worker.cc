@@ -84,7 +84,7 @@ void Worker::put_object(ObjRef objref, const Obj* obj) {
   receive_obj_queue_.receive(&result);
   uint8_t* target = segmentpool_.get_address(result);
   std::memcpy(target, &data[0], data.size());
-  request.type = ObjRequestType::DONE;
+  request.type = ObjRequestType::WORKER_DONE;
   request.metadata_offset = 0;
   request_obj_queue_.send(&request);
 }
@@ -100,7 +100,7 @@ void Worker::put_arrow(ObjRef objref, PyArrayObject* array) {
   ObjHandle result;
   receive_obj_queue_.receive(&result);
   store_arrow(array, result, &segmentpool_);
-  request.type = ObjRequestType::DONE;
+  request.type = ObjRequestType::WORKER_DONE;
   request.metadata_offset = result.metadata_offset();
   request_obj_queue_.send(&request);
 }

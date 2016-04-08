@@ -6,6 +6,7 @@
 #include <memory>
 #include <algorithm>
 #include <iostream>
+#include <limits>
 
 #include <grpc++/grpc++.h>
 
@@ -22,6 +23,8 @@ using grpc::Status;
 using grpc::ClientContext;
 
 using grpc::Channel;
+
+const ObjRef UNITIALIZED_ALIAS = std::numeric_limits<ObjRef>::max();
 
 struct WorkerHandle {
   std::shared_ptr<Channel> channel;
@@ -96,11 +99,10 @@ private:
 
   // Mapping from an aliased objref to the objref it is aliased with. If an
   // objref is a canonical objref (meaning it is not aliased), then
-  // target_objrefs_[objref] == objref. Each element of target_objrefs_ is a
-  // vector because we need it to either have length 0 or length 1. Eventually
-  // all entries have length 1, but before the aliasing is done they have length
-  // 0.
-  std::vector<std::vector<ObjRef> > target_objrefs_;
+  // target_objrefs_[objref] == objref. For each objref, target_objrefs_[objref]
+  // is initialized to UNITIALIZED_ALIAS and the correct value is filled later
+  // when it is known.
+  std::vector<ObjRef> target_objrefs_;
   std::mutex target_objrefs_lock_;
 
   // Mapping from canonical objref to list of object stores where the object is stored. Non-canonical (aliased) objrefs should not be used to index objtable_.
