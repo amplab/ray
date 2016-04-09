@@ -1,6 +1,6 @@
-# Orchestra
+# Photon
 
-Orchestra is a distributed execution framework with a Python-like programming model.
+Photon is a distributed execution framework with a Python-like programming model. Ask questions on the [photon-users mailing list](https://groups.google.com/forum/#!forum/photon-users)!
 
 ## Setup
 
@@ -32,16 +32,16 @@ Orchestra is a distributed execution framework with a Python-like programming mo
 8. `cd ..`
 9. `python setup.py install`
 
-**Install Orchestra**
+**Install Photon**
 
-1. `git clone git@github.com:amplab/orch.git`
-2. `cd orch`
+1. `git clone https://github.com/amplab/photon.git`
+2. `cd photon`
 3. `mkdir build`
 4. `cd build`
 5. `cmake ..`
 6. `make install`
 7. `cd ../lib/orchpy`
 8. `python setup.py install`
-9. `cd ~/orch/test`
+9. `cd ~/photon/test`
 10. `bash gen-python-code.sh`
 11. `python runtest.py`
