@@ -1,19 +1,20 @@
 #include "objstore.h"
 #include <chrono>
 
-const size_t ObjStoreClient::CHUNK_SIZE = 8 * 1024;
+const size_t ObjStoreService::CHUNK_SIZE = 8 * 1024;
 
 // this method needs to be protected by a objstore_lock_
-Status ObjStoreClient::upload_data_to(slice data, ObjRef objref, ObjStore::Stub& stub) {
+Status ObjStoreService::upload_data_to(ObjHandle handle, ObjRef objref, ObjStore::Stub& stub) {
   ObjChunk chunk;
   ClientContext context;
   AckReply reply;
   std::unique_ptr<ClientWriter<ObjChunk> > writer(stub.StreamObj(&context, &reply));
-  const uint8_t* head = data.data;
-  for (size_t i = 0; i < data.len; i += CHUNK_SIZE) {
+  const uint8_t* head = segmentpool_.get_address(handle);
+  size_t size = handle.size();
+  for (size_t i = 0; i < size; i += CHUNK_SIZE) {
     chunk.set_objref(objref);
-    chunk.set_totalsize(data.len);
-    chunk.set_data(head + i, std::min(CHUNK_SIZE, data.len - i));
+    chunk.set_totalsize(size);
+    chunk.set_data(head + i, std::min(CHUNK_SIZE, size - i));
     if (!writer->Write(chunk)) {
       ORCH_LOG(ORCH_FATAL, "stream connection prematurely closed")
     }
@@ -25,6 +26,10 @@ Status ObjStoreClient::upload_data_to(slice data, ObjRef objref, ObjStore::Stub&
 ObjStoreService::ObjStoreService(const std::string& objstore_address, std::shared_ptr<Channel> scheduler_channel)
   : scheduler_stub_(Scheduler::NewStub(scheduler_channel)), segmentpool_(true), objstore_address_(objstore_address) {
   recv_queue_.connect(std::string("queue:") + objstore_address + std::string(":obj"), true);
+  request_obj_queue_.connect(std::string("queue:") + objstore_address + std::string(":obj"), false);
+  std::string receive_queue_name = std::string("queue:") + objstore_address + std::string(":worker:") + std::to_string(OBJSTORE_WORKERID) + std::string(":obj");
+  receive_obj_queue_.connect(receive_queue_name, true);
+
   ClientContext context;
   RegisterObjStoreRequest request;
   request.set_objstore_address(objstore_address);
@@ -43,15 +48,13 @@ ObjStore::Stub& ObjStoreService::get_objstore_stub(const std::string& objstore_a
   return *objstores_[objstore_address];
 }
 
-/*
 Status ObjStoreService::DeliverObj(ServerContext* context, const DeliverObjRequest* request, AckReply* reply) {
   std::lock_guard<std::mutex> objstores_lock(objstores_lock_);
   ObjStore::Stub& stub = get_objstore_stub(request->objstore_address());
   ObjRef objref = request->objref();
-  Status status = ObjStoreClient::upload_data_to(memory_[objref].ptr, objref, stub);
+  Status status = upload_data_to(memory_[objref].first, objref, stub);
   return status;
 }
-*/
 
 Status ObjStoreService::ObjStoreInfo(ServerContext* context, const ObjStoreInfoRequest* request, ObjStoreInfoReply* reply) {
   std::lock_guard<std::mutex> memory_lock(memory_lock_);
@@ -72,20 +75,28 @@ Status ObjStoreService::ObjStoreInfo(ServerContext* context, const ObjStoreInfoR
   return Status::OK;
 }
 
-/*
 Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>* reader, AckReply* reply) {
   ORCH_LOG(ORCH_VERBOSE, "begin to stream data to object store " << objstoreid_);
   memory_lock_.lock();
   ObjChunk chunk;
   ObjRef objref = 0;
   size_t totalsize = 0;
+  ObjHandle handle;
+  ObjRequest request;
+
   if (reader->Read(&chunk)) {
     objref = chunk.objref();
     totalsize = chunk.totalsize();
-    allocate_memory(objref, totalsize);
+    request.workerid = OBJSTORE_WORKERID;
+    request.type = ObjRequestType::ALLOC;
+    request.objref = objref;
+    request.size = totalsize;
+    request_obj_queue_.send(&request);
+    receive_obj_queue_.receive(&handle);
   }
   size_t num_bytes = 0;
-  char* data = memory_[objref].ptr.data;
+
+  uint8_t* data = segmentpool_.get_address(handle);
 
   do {
     if (num_bytes + chunk.data().size() > totalsize) {
@@ -96,6 +107,11 @@ Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>
     data += chunk.data().size();
     num_bytes += chunk.data().size();
   } while (reader->Read(&chunk));
+
+  // finalize object
+
+  request.type = ObjRequestType::WORKER_DONE;
+  request_obj_queue_.send(&request);
 
   ORCH_LOG(ORCH_VERBOSE, "finished streaming data, objref was " << objref << " and size was " << num_bytes);
 
@@ -110,7 +126,6 @@ Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>
 
   return Status::OK;
 }
-*/
 
 Status ObjStoreService::NotifyAlias(ServerContext* context, const NotifyAliasRequest* request, AckReply* reply) {
   // NotifyAlias assumes that the objstore already holds canonical_objref
@@ -181,12 +196,18 @@ void ObjStoreService::process_objstore_request(const ObjRequest request) {
 }
 
 void ObjStoreService::process_worker_request(const ObjRequest request) {
-  if (request.workerid >= send_queues_.size()) {
-    send_queues_.resize(request.workerid + 1);
+  MessageQueue<ObjHandle>* sender;
+  if (request.workerid == OBJSTORE_WORKERID) {
+    sender = &send_queue_;
+  } else {
+    if (request.workerid >= send_queues_.size()) {
+      send_queues_.resize(request.workerid + 1);
+    }
+    sender = &send_queues_[request.workerid];
   }
-  if (!send_queues_[request.workerid].connected()) {
+  if (!sender->connected()) {
     std::string queue_name = std::string("queue:") + objstore_address_ + std::string(":worker:") + std::to_string(request.workerid) + std::string(":obj");
-    send_queues_[request.workerid].connect(queue_name, false);
+    sender->connect(queue_name, false);
   }
   {
     std::lock_guard<std::mutex> memory_lock(memory_lock_);
@@ -198,7 +219,7 @@ void ObjStoreService::process_worker_request(const ObjRequest request) {
     case ObjRequestType::ALLOC: {
         // TODO(rkn): Does segmentpool_ need a lock around it?
         ObjHandle reply = segmentpool_.allocate(request.size);
-        send_queues_[request.workerid].send(&reply);
+        sender->send(&reply);
         std::lock_guard<std::mutex> memory_lock(memory_lock_);
         if (memory_[request.objref].second != MemoryStatusType::NOT_PRESENT) {
           ORCH_LOG(ORCH_FATAL, "Attempting to allocate space for objref " << request.objref << ", but memory_[objref].second != MemoryStatusType::NOT_PRESENT, it equals " << memory_[request.objref].second);
@@ -212,7 +233,7 @@ void ObjStoreService::process_worker_request(const ObjRequest request) {
         std::pair<ObjHandle, MemoryStatusType>& item = memory_[request.objref];
         if (item.second == MemoryStatusType::READY) {
           ORCH_LOG(ORCH_DEBUG, "Responding to GET request: returning objref " << request.objref);
-          send_queues_[request.workerid].send(&item.first);
+          sender->send(&item.first);
         } else if (item.second == MemoryStatusType::NOT_READY || item.second == MemoryStatusType::NOT_PRESENT) {
           std::lock_guard<std::mutex> lock(pull_queue_lock_);
           pull_queue_.push_back(std::make_pair(request.workerid, request.objref));

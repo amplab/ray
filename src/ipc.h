@@ -91,6 +91,9 @@ private:
 
 enum ObjRequestType {ALLOC = 0, GET = 1, WORKER_DONE = 2, ALIAS_DONE = 3};
 
+// The following is used as the workerid if the object store sends a request to itself
+const WorkerId OBJSTORE_WORKERID = std::numeric_limits<WorkerId>::max();
+
 struct ObjRequest {
   WorkerId workerid; // worker that sends the request
   ObjRequestType type; // do we want to allocate a new object or get a handle?
