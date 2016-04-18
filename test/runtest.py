@@ -71,7 +71,14 @@ class ObjStoreTest(unittest.TestCase):
   # Test setting up object stores, transfering data between them and retrieving data to a client
   def testObjStore(self):
     w = worker.Worker()
-    services.start_cluster(driver_worker=w)
+    scheduler_address = services.start_cluster(driver_worker=w)
+    objstore2_address = services.address(services.IP_ADDRESS, services.new_objstore_port())
+    services.start_objstore(scheduler_address, objstore2_address)
+    time.sleep(0.3)
+
+    worker2_address = services.address(services.IP_ADDRESS, services.new_worker_port())
+    worker2 = worker.Worker()
+    orchpy.connect(scheduler_address, objstore2_address, services.address(services.IP_ADDRESS, services.new_worker_port()), worker2)
 
     # pushing and pulling an object shouldn't change it
     for data in ["h", "h" * 10000, 0, 0.0]:
@@ -80,11 +87,10 @@ class ObjStoreTest(unittest.TestCase):
       self.assertEqual(result, data)
 
     # pushing an object, shipping it to another worker, and pulling it shouldn't change it
-    # for data in ["h", "h" * 10000, 0, 0.0]:
-    #   objref = worker.push(data, worker1)
-    #   response = objstore1_stub.DeliverObj(orchestra_pb2.DeliverObjRequest(objref=objref.val, objstore_address=address(IP_ADDRESS, objstore2_port)), TIMEOUT_SECONDS)
-    #   result = worker.pull(objref, worker2)
-    #   self.assertEqual(result, data)
+    for data in ["h", "h" * 10000, 0, 0.0]:
+      objref = worker.push(data, w)
+      result = worker.pull(objref, worker2)
+      self.assertEqual(result, data)
 
     services.cleanup()
 

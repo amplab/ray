@@ -176,6 +176,7 @@ message RegisterObjReply {
 message ObjChunk {
   uint64 objref = 1; // Object reference of the object being streamed
   uint64 totalsize = 2; // Total size of the object
+  uint64 metadata_offset = 4; // Offset of the arrow metadata
   bytes data = 3; // Data for this chunk of the object
 }
 

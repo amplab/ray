@@ -12,6 +12,7 @@ Status ObjStoreService::upload_data_to(ObjHandle handle, ObjRef objref, ObjStore
   const uint8_t* head = segmentpool_.get_address(handle);
   size_t size = handle.size();
   for (size_t i = 0; i < size; i += CHUNK_SIZE) {
+    chunk.set_metadata_offset(handle.metadata_offset());
     chunk.set_objref(objref);
     chunk.set_totalsize(size);
     chunk.set_data(head + i, std::min(CHUNK_SIZE, size - i));
@@ -91,6 +92,7 @@ Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>
     request.type = ObjRequestType::ALLOC;
     request.objref = objref;
     request.size = totalsize;
+    request.metadata_offset = chunk.metadata_offset();
     request_obj_queue_.send(&request);
     receive_obj_queue_.receive(&handle);
   }
@@ -116,13 +118,6 @@ Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>
   ORCH_LOG(ORCH_VERBOSE, "finished streaming data, objref was " << objref << " and size was " << num_bytes);
 
   memory_lock_.unlock();
-
-  ClientContext objready_context;
-  ObjReadyRequest objready_request;
-  objready_request.set_objref(objref);
-  objready_request.set_objstoreid(objstoreid_);
-  AckReply objready_reply;
-  scheduler_stub_->ObjReady(&objready_context, objready_request, &objready_reply);
 
   return Status::OK;
 }
