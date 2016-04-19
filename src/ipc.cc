@@ -32,9 +32,6 @@ MemorySegmentPool::MemorySegmentPool(bool create) : create_mode_(create) { }
 // space is allocated, if it is in open mode, the shared memory is mapped into the process
 void MemorySegmentPool::open_segment(SegmentId segmentid, size_t size) {
   ORCH_LOG(ORCH_DEBUG, "OPENING segmentid " << segmentid);
-  if (segmentid != segments_.size() && create_mode_) {
-    ORCH_LOG(ORCH_FATAL, "Attempting to open segmentid " << segmentid << " on the object store, but segments_.size() = " << segments_.size());
-  }
   if (segmentid >= segments_.size()) { // resize and initialize segments_
     int current_size = segments_.size();
     segments_.resize(segmentid + 1);
