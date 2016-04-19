@@ -77,7 +77,7 @@ Status ObjStoreService::ObjStoreInfo(ServerContext* context, const ObjStoreInfoR
 }
 
 Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>* reader, AckReply* reply) {
-  ORCH_LOG(ORCH_VERBOSE, "begin to stream data to object store " << objstoreid_);
+  ORCH_LOG(ORCH_DEBUG, "begin to stream data to object store " << objstoreid_);
   ObjChunk chunk;
   ObjRef objref = 0;
   size_t totalsize = 0;
@@ -113,7 +113,7 @@ Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>
   request.type = ObjRequestType::WORKER_DONE;
   request_obj_queue_.send(&request);
 
-  ORCH_LOG(ORCH_VERBOSE, "finished streaming data, objref was " << objref << " and size was " << num_bytes);
+  ORCH_LOG(ORCH_DEBUG, "finished streaming data, objref was " << objref << " and size was " << num_bytes);
 
   return Status::OK;
 }
