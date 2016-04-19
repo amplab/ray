@@ -566,16 +566,17 @@ void SchedulerService::deallocate_object(ObjRef canonical_objref) {
   // so the lock must before outside of these methods (it is acquired in
   // DecrementRefCount).
   ORCH_LOG(ORCH_DEBUG, "Deallocating canonical_objref " << canonical_objref << ".");
-  ClientContext context;
-  AckReply reply;
-  DeallocateObjectRequest request;
-  request.set_canonical_objref(canonical_objref);
   {
     std::lock_guard<std::mutex> objtable_lock(objtable_lock_);
     auto &objstores = objtable_[canonical_objref];
     std::lock_guard<std::mutex> objstores_lock(objstores_lock_); // TODO(rkn): Should this be inside the for loop instead?
     for (int i = 0; i < objstores.size(); ++i) {
+      ClientContext context;
+      AckReply reply;
+      DeallocateObjectRequest request;
+      request.set_canonical_objref(canonical_objref);
       ObjStoreId objstoreid = objstores[i];
+      ORCH_LOG(ORCH_DEBUG, "Attempting to deallocate canonical_objref " << canonical_objref << " from objstore " << objstoreid);
       objstores_[objstoreid].objstore_stub->DeallocateObject(&context, request, &reply);
     }
   }
