@@ -78,7 +78,6 @@ Status ObjStoreService::ObjStoreInfo(ServerContext* context, const ObjStoreInfoR
 
 Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>* reader, AckReply* reply) {
   ORCH_LOG(ORCH_VERBOSE, "begin to stream data to object store " << objstoreid_);
-  memory_lock_.lock();
   ObjChunk chunk;
   ObjRef objref = 0;
   size_t totalsize = 0;
@@ -102,7 +101,6 @@ Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>
 
   do {
     if (num_bytes + chunk.data().size() > totalsize) {
-      memory_lock_.unlock();
       return Status::CANCELLED;
     }
     std::memcpy(data, chunk.data().c_str(), chunk.data().size());
@@ -116,8 +114,6 @@ Status ObjStoreService::StreamObj(ServerContext* context, ServerReader<ObjChunk>
   request_obj_queue_.send(&request);
 
   ORCH_LOG(ORCH_VERBOSE, "finished streaming data, objref was " << objref << " and size was " << num_bytes);
-
-  memory_lock_.unlock();
 
   return Status::OK;
 }
