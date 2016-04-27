@@ -81,14 +81,16 @@ def start_worker(test_path, scheduler_address, objstore_address, worker_address)
                         "--worker-address=" + worker_address])
   all_processes.append((p, worker_address))
 
-def start_cluster(return_drivers=False, num_objstores=1, num_workers_per_objstore=0, worker_path=None):
+def start_cluster(scheduler_address=None, return_drivers=False, num_objstores=1, num_workers_per_objstore=0, worker_path=None):
   global drivers
   if num_workers_per_objstore > 0 and worker_path is None:
     raise Exception("Attempting to start a cluster with {} workers per object store, but `worker_path` is None.".format(num_workers_per_objstore))
   if num_workers_per_objstore > 0 and num_objstores < 1:
     raise Exception("Attempting to start a cluster with {} workers per object store, but `num_objstores` is {}.".format(num_objstores))
-  scheduler_address = address(IP_ADDRESS, new_scheduler_port())
-  start_scheduler(scheduler_address)
+  if scheduler_address is None:
+    # Then start a scheduler
+    scheduler_address = address(IP_ADDRESS, new_scheduler_port())
+    start_scheduler(scheduler_address)
   time.sleep(0.1)
   objstore_addresses = []
   # create objstores
