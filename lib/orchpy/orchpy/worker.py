@@ -3,6 +3,7 @@ import typing
 import numpy as np
 import pynumbuf
 
+import orchestra_pb2
 import orchpy
 import serialization
 
@@ -53,7 +54,68 @@ class Worker(object):
 global_worker = Worker()
 
 def scheduler_info(worker=global_worker):
-  return orchpy.lib.scheduler_info(worker.handle);
+  scheduler_info_str = orchpy.lib.scheduler_info(worker.handle);
+  parsed_info = orchestra_pb2.SchedulerInfoReply()
+  parsed_info.ParseFromString(scheduler_info_str)
+  task_queue = [taskid for taskid in parsed_info.taskid]
+  available_workers = [available_worker for available_worker in parsed_info.avail_worker]
+  function_table = {function_name : {"workerids" : function_info.workerid, "num_return_values" : function_info.num_return_vals} for (function_name, function_info) in parsed_info.function_table.iteritems()}
+  target_objrefs = [target_objref for target_objref in parsed_info.target_objref]
+  reference_counts = [reference_count for reference_count in parsed_info.reference_count]
+  tasks = [(task.name, task.arg, task.result) for task in parsed_info.task]
+  spawned_tasks = [spawned.taskid for spawned in parsed_info.spawned_task]
+  object_locations = [locations.objstoreid for locations in parsed_info.location_list]
+  reverse_target_objrefs = [reverse_targets.objref for reverse_targets in parsed_info.reverse_target_objrefs]
+  alias_notifications = [{"objstoreid" : notification.objstoreid, "alias_objref" : notification.alias_objref, "canonical_objref" : notification.target_objref} for notification in parsed_info.alias_notification]
+  contained_objrefs = [contained.objref for contained in parsed_info.contained_objrefs]
+  pulls = [{"workerid" : pull.workerid, "objref" : pull.objref} for pull in parsed_info.pull]
+  current_task = [{"taskid" : task.taskid, "new_task" : task.new_task, "num_spawned" : task.num_spawned} for task in parsed_info.current_task]
+  workers = [{"alive" : worker_field.alive, "objstoreid" : worker_field.objstoreid} for worker_field in parsed_info.worker]
+  objstores = [{"alive" : objstore_field.alive, "address" : objstore_field.address} for objstore_field in parsed_info.objstore]
+
+  scheduler_info = {
+    "task_queue" : task_queue,
+    "available_workers" : available_workers,
+    "function_table" : function_table,
+    "target_objrefs" : target_objrefs,
+    "reference_counts" : reference_counts,
+    "tasks" : tasks,
+    "spawned_tasks" : spawned_tasks,
+    "object_locations" : object_locations,
+    "reverse_target_objrefs" : reverse_target_objrefs,
+    "alias_notifications" : alias_notifications,
+    "contained_objrefs" : contained_objrefs,
+    "pulls" : pulls,
+    "current_task" : current_task,
+    "workers" : workers,
+    "objstores" : objstores
+  }
+  return scheduler_info
+
+def objstore_info(worker=global_worker):
+  # TODO(rkn): Currently objstoreid is ignored
+  objstoreid = 0
+  objstore_info_str = orchpy.lib.objstore_info(worker.handle, objstoreid);
+  parsed_info = orchestra_pb2.ObjStoreInfoReply()
+  parsed_info.ParseFromString(scheduler_info_str)
+  address = parsed_info.address
+  objstoreid_val = parsed_info.objstoreid
+  memory = parsed_info.memory
+
+  objstore_info = {
+    "address" : address,
+    "objstoreid" : objstoreid_val,
+    "memory" : memory
+  }
+  return objstore_info
+
+def kill_objstore(objstoreid, worker=global_worker):
+  """Tell the scheduler to kill a particular object store."""
+  orchpy.lib.kill_objstore(worker.handle, objstoreid)
+
+def kill_worker(workerid, worker=global_worker):
+  """Tell te scheduler to kill a particular worker."""
+  orchpy.lib.kill_worker(worker.handle, workerid)
 
 def register_module(module, recursive=False, worker=global_worker):
   print "registering functions in module {}.".format(module.__name__)
@@ -75,26 +137,38 @@ def disconnect(worker=global_worker):
 
 def pull(objref, worker=global_worker):
   orchpy.lib.request_object(worker.handle, objref)
+  print "IN WORKER.PY: between request and get"
   return worker.get_object(objref)
 
 def push(value, worker=global_worker):
-  objref = orchpy.lib.get_objref(worker.handle)
-  worker.put_object(objref, value)
+  objref, already_present = orchpy.lib.get_objref(worker.handle)
+  if not already_present:
+    worker.put_object(objref, value)
   return objref
 
 def main_loop(worker=global_worker):
   if not orchpy.lib.connected(worker.handle):
     raise Exception("Worker is attempting to enter main_loop but has not been connected yet.")
   orchpy.lib.start_worker_service(worker.handle)
-  def process_call(call): # wrapping these calls in a function should cause the local variables to go out of scope more quickly, which is useful for inspecting reference counts
-    func_name, args, return_objrefs = serialization.deserialize_call(worker.handle, call)
+  def process_call(call, outputs_to_store, first_execution): # wrapping these calls in a function should cause the local variables to go out of scope more quickly, which is useful for inspecting reference counts
+    print "IN MAIN_LOOP: AAA"
+    func_name, args, return_objrefs = serialization.deserialize_call(worker.handle, call, first_execution)
+    print "IN MAIN_LOOP: BBB"
     arguments = get_arguments_for_execution(worker.functions[func_name], args, worker) # get args from objstore
+    print "IN MAIN_LOOP: CCC"
     outputs = worker.functions[func_name].executor(arguments) # execute the function
-    store_outputs_in_objstore(return_objrefs, outputs, worker) # store output in local object store
+    print "IN MAIN_LOOP: DDD"
+    store_outputs_in_objstore(return_objrefs, outputs, outputs_to_store, worker) # store output in local object store
+    print "IN MAIN_LOOP: EEE"
     orchpy.lib.notify_task_completed(worker.handle) # notify the scheduler that the task has completed
+    print "IN MAIN_LOOP: FFF"
   while True:
-    call = orchpy.lib.wait_for_next_task(worker.handle)
-    process_call(call)
+    print "IN MAIN_LOOP: 111"
+    call, outputs_to_store, first_execution = orchpy.lib.wait_for_next_task(worker.handle)
+    print "IN MAIN_LOOP: 222"
+    print "IN WORKER.PY --- FIRST_EXECUTION = {}".format(first_execution)
+    process_call(call, outputs_to_store, first_execution)
+    print "IN MAIN_LOOP: 333"
 
 def distributed(arg_types, return_types, worker=global_worker):
   def distributed_decorator(func):
@@ -193,11 +267,14 @@ def get_arguments_for_execution(function, args, worker=global_worker):
   return arguments
 
 # helper method, this should not be called by the user
-def store_outputs_in_objstore(objrefs, outputs, worker=global_worker):
+def store_outputs_in_objstore(objrefs, outputs, outputs_to_store, worker=global_worker):
   if len(objrefs) == 1:
     outputs = (outputs,)
 
   for i in range(len(objrefs)):
+    if not outputs_to_store[i]:
+      print "NOT STORING OBJREF {}".format(objrefs[i])
+      continue
     if isinstance(outputs[i], orchpy.lib.ObjRef):
       # An ObjRef is being returned, so we must alias objrefs[i] so that it refers to the same object that outputs[i] refers to
       print "Aliasing objrefs {} and {}".format(objrefs[i].val, outputs[i].val)

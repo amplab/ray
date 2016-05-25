@@ -9,42 +9,157 @@
 SchedulerService::SchedulerService(SchedulingAlgorithmType scheduling_algorithm) : scheduling_algorithm_(scheduling_algorithm) {}
 
 Status SchedulerService::RemoteCall(ServerContext* context, const RemoteCallRequest* request, RemoteCallReply* reply) {
-  std::unique_ptr<Call> task(new Call(request->call())); // need to copy, because request is const
+  auto temp_task = request->call().New();
+  // auto temp_task = std::unique_ptr<Call>(request->call().New());
+  temp_task->CopyFrom(request->call());
+
   fntable_lock_.lock();
-
-  if (fntable_.find(task->name()) == fntable_.end()) {
+  // ORCH_LOG(ORCH_DEBUG, "In RemoteCall: Acquired fntable_lock_");
+  if (fntable_.find(temp_task->name()) == fntable_.end()) {
     // TODO(rkn): In the future, this should probably not be fatal. Instead, propagate the error back to the worker.
-    ORCH_LOG(ORCH_FATAL, "The function " << task->name() << " has not been registered by any worker.");
+    ORCH_LOG(ORCH_FATAL, "The function " << temp_task->name() << " has not been registered by any worker.");
   }
-
-  size_t num_return_vals = fntable_[task->name()].num_return_vals();
+  size_t num_return_vals = fntable_[temp_task->name()].num_return_vals();
   fntable_lock_.unlock();
+  // ORCH_LOG(ORCH_DEBUG, "In RemoteCall: Released fntable_lock_");
 
+  computation_graph_lock_.lock();
+  current_tasks_lock_.lock();
+
+  std::pair<TaskId, std::pair<bool, size_t> > current_task_info = current_tasks_[request->workerid()];
+  TaskId creator_taskid = current_task_info.first;
+  bool creator_task_is_new = current_task_info.second.first;
+  size_t spawned_task_index = current_task_info.second.second;
+  current_tasks_[request->workerid()].second.second += 1;
+  bool current_task_is_new = computation_graph_.is_new_task(creator_taskid, spawned_task_index);
+
+  TaskId taskid;
   std::vector<ObjRef> result_objrefs;
+  if (current_task_is_new) {
+    // this is a new task
+    for (size_t i = 0; i < num_return_vals; ++i) {
+      ObjRef result = register_new_object();
+      temp_task->add_result(result);
+      // temp_task->add_store_output(true);
+      result_objrefs.push_back(result);
+    }
+    auto task_or_push = std::unique_ptr<TaskOrPush>(new TaskOrPush());
+    task_or_push->set_allocated_task(temp_task);
+    // task_or_push->mutable_task()->CopyFrom(temp_task);
+    task_or_push->set_creator_taskid(creator_taskid);
+    taskid = computation_graph_.add_task(std::move(task_or_push));
+    // taskid = computation_graph_.add_task(std::move(temp_task), creator_taskid);
+  } else {
+    // This task is not new, so do not run it. When we rerun tasks for fault
+    // tolerance reasons, we do not allow the tasks to spawn new tasks.
+    taskid = computation_graph_.get_spawned_taskid(creator_taskid, spawned_task_index);
+    ORCH_LOG(ORCH_DEBUG, "In RemoteCall, not rerunning task " << taskid << " because it is not new.");
+    result_objrefs = computation_graph_.get_spawned_objrefs(creator_taskid, spawned_task_index);
+    if (result_objrefs.size() != num_return_vals) {
+      // ORCH_LOG(ORCH_DEBUG, "creator_taskid = " << creator_taskid);
+      // ORCH_LOG(ORCH_DEBUG, "spawned_task_index = " << spawned_task_index);
+      // ORCH_LOG(ORCH_DEBUG, "result_objrefs.size() = " << result_objrefs.size());
+      // ORCH_LOG(ORCH_DEBUG, "num_return_vals = " << num_return_vals);
+      ORCH_LOG(ORCH_FATAL, "Attempting to rerun task " << taskid << ", but result_objrefs.size() != num_return_vals.");
+      // TODO(rkn): Check that arguments passed by value and ref are the same as what we have cached.
+    }
+  }
+  const Call& task = computation_graph_.get_task(taskid);
+  computation_graph_lock_.unlock();
+  current_tasks_lock_.unlock();
+
+  /*
+  task.clear_store_output();
+  for (int i = 0; i < num_return_vals; ++i) {
+    task.add_store_output(!already_present(task.result(i)));
+  }
+  */
+
+  if (num_return_vals != result_objrefs.size()) {
+    ORCH_LOG(ORCH_FATAL, "In Scheduler::RemoteCall, num_return_vals != result_objrefs.size()");
+  }
   for (size_t i = 0; i < num_return_vals; ++i) {
-    ObjRef result = register_new_object();
-    reply->add_result(result);
-    task->add_result(result);
-    result_objrefs.push_back(result);
+    reply->add_result(result_objrefs[i]);
   }
   {
     std::lock_guard<std::mutex> reference_counts_lock(reference_counts_lock_); // we grab this lock because increment_ref_count assumes it has been acquired
     increment_ref_count(result_objrefs); // We increment once so the objrefs don't go out of scope before we reply to the worker that called RemoteCall. The corresponding decrement will happen in remote_call in orchpylib.
+    // TODO(rkn): Maybe we don't want the increment below if !current_task_is_new because we don't do the decrement in deserialize_call. Think about this.
     increment_ref_count(result_objrefs); // We increment once so the objrefs don't go out of scope before the task is scheduled on the worker. The corresponding decrement will happen in deserialize_call in orchpylib.
   }
 
-  task_queue_lock_.lock();
-  task_queue_.emplace_back(std::move(task));
-  task_queue_lock_.unlock();
+  if (current_task_is_new) {
+    // ORCH_LOG(ORCH_DEBUG, "In RemoteCall: Acquiring task_queue");
+    task_queue_lock_.lock();
+    task_queue_.push_back(std::make_pair(taskid, current_task_is_new));
+    task_queue_lock_.unlock();
+    // ORCH_LOG(ORCH_DEBUG, "In RemoteCall: Released task_queue");
+  }
 
   schedule();
   return Status::OK;
 }
 
 Status SchedulerService::PushObj(ServerContext* context, const PushObjRequest* request, PushObjReply* reply) {
-  ObjRef objref = register_new_object();
-  ObjStoreId objstoreid = get_store(request->workerid());
-  reply->set_objref(objref);
+  // TODO(rkn): We cannot re-execute a push that was done by the driver. Should we check for that case here?
+  computation_graph_lock_.lock();
+  current_tasks_lock_.lock();
+
+  std::pair<TaskId, std::pair<bool, size_t> > current_task_info = current_tasks_[request->workerid()];
+  TaskId creator_taskid = current_task_info.first;
+  bool creator_task_is_new = current_task_info.second.first;
+  size_t spawned_task_index = current_task_info.second.second;
+  current_tasks_[request->workerid()].second.second += 1;
+  bool current_task_is_new = computation_graph_.is_new_task(creator_taskid, spawned_task_index);
+
+  ObjRef objref = 0;
+  if (current_task_is_new) {
+    // this is a new push
+    objref = register_new_object();
+    reply->set_objref(objref);
+    reply->set_already_present(false);
+
+    Push* push = new Push();
+    push->set_objref(objref);
+    auto push_task = std::unique_ptr<TaskOrPush>(new TaskOrPush());
+    push_task->set_allocated_push(push);
+    push_task->set_creator_taskid(creator_taskid);
+    computation_graph_.add_task(std::move(push_task));
+    // auto push_task = std::unique_ptr<Call>(new Call());
+    // push_task->add_result(objref);
+    // computation_graph_.add_task(std::move(push_task), creator_taskid);
+
+    // Call push_task;
+    // push_task.add_result(objref); // TODO(rkn): Do we want to add any other information like the name "push"?
+    // computation_graph_.add_task(&push_task, creator_taskid);
+  }
+  else {
+    // this is a push that we are re-running for fault tolerance reasons
+    ObjRef objref = computation_graph_.get_spawned_objrefs(creator_taskid, spawned_task_index)[0];
+    reply->set_objref(objref);
+    bool object_still_present = false;
+    reply->set_already_present(already_present(objref));
+    if (has_canonical_objref(objref)) {
+      if (!is_canonical(objref)) {
+        ORCH_LOG(ORCH_FATAL, "objref was the result of a push call, but !is_canonical(objref).");
+      }
+      objtable_lock_.lock();
+      object_still_present = (objtable_[objref].size() > 0);
+      objtable_lock_.unlock();
+    }
+    if (object_still_present) {
+      reply->set_already_present(true);
+      ORCH_LOG(ORCH_FATAL, "In PushObj, re-running push of objref " << objref << " from creator task " << creator_taskid << ", the object is still in an object store."); // TODO(rkn): Later this shouldn't be fatal, but right now fault tolerance should never be triggered.
+    }
+    else {
+      reply->set_already_present(false);
+      ORCH_LOG(ORCH_FATAL, "In PushObj, re-running push of objref " << objref << " from creator task " << creator_taskid << ", the object is no longer in an object store."); // TODO(rkn): Later this shouldn't be fatal, but right now fault tolerance should never be triggered.
+    }
+  }
+
+  computation_graph_lock_.unlock();
+  current_tasks_lock_.unlock();
+
   schedule();
   return Status::OK;
 }
@@ -102,6 +217,7 @@ Status SchedulerService::RegisterObjStore(ServerContext* context, const Register
   ObjStoreId objstoreid = objstores_.size();
   auto channel = grpc::CreateChannel(request->objstore_address(), grpc::InsecureChannelCredentials());
   objstores_.push_back(ObjStoreHandle());
+  objstores_[objstoreid].alive = true;
   objstores_[objstoreid].address = request->objstore_address();
   objstores_[objstoreid].channel = channel;
   objstores_[objstoreid].objstore_stub = ObjStore::NewStub(channel);
@@ -137,10 +253,27 @@ Status SchedulerService::ObjReady(ServerContext* context, const ObjReadyRequest*
 }
 
 Status SchedulerService::WorkerReady(ServerContext* context, const WorkerReadyRequest* request, AckReply* reply) {
-  ORCH_LOG(ORCH_INFO, "worker " << request->workerid() << " reported back");
+  WorkerId workerid = request->workerid();
+  ORCH_LOG(ORCH_INFO, "worker " << workerid << " reported back");
   {
-    std::lock_guard<std::mutex> lock(avail_workers_lock_);
-    avail_workers_.push_back(request->workerid());
+    std::lock_guard<std::mutex> lock(workers_lock_);
+    if (!workers_[workerid].alive) {
+      ORCH_LOG(ORCH_DEBUG, "workerid " << workerid << " just called WorkerReady, but workers_[workerid].alive == false. This is probably ok but could be an error.");
+      return Status::OK;
+    }
+  }
+  {
+    // Here we should update avail_workers_ and current_tasks_ at the same time.
+    // Updating them seperately caused a bug in the past.
+    std::lock_guard<std::mutex> avail_workers_lock(avail_workers_lock_);
+    std::lock_guard<std::mutex> current_tasks_lock(current_tasks_lock_);
+    if (current_tasks_[workerid].first == NO_TASK) {
+      ORCH_LOG(ORCH_FATAL, "workerid " << workerid << " just called WorkerReady, but current_tasks[workerid].first == NO_TASK");
+    }
+    current_tasks_[workerid].first = NO_TASK;
+    current_tasks_[workerid].second.first = false;
+    current_tasks_[workerid].second.second = 0;
+    avail_workers_.push_back(workerid);
   }
   schedule();
   return Status::OK;
@@ -195,6 +328,26 @@ Status SchedulerService::SchedulerInfo(ServerContext* context, const SchedulerIn
   return Status::OK;
 }
 
+Status SchedulerService::KillObjStore(ServerContext* context, const KillObjStoreRequest* request, AckReply* reply) {
+  ObjStoreId objstoreid = request->objstoreid();
+  ORCH_LOG(ORCH_INFO, "Scheduler is attempting to terminate object store " << objstoreid);
+  objstores_lock_.lock();
+  kill_objstore(objstoreid);
+  objstores_lock_.unlock();
+  // TODO(rkn): Insert random wait here? Does it matter?
+  recover_from_failed_objstore(objstoreid);
+  return Status::OK;
+}
+
+Status SchedulerService::KillWorker(ServerContext* context, const KillWorkerRequest* request, AckReply* reply) {
+  WorkerId workerid = request->workerid();
+  ORCH_LOG(ORCH_INFO, "Scheduler is attempting to terminate worker " << workerid);
+  workers_lock_.lock();
+  kill_worker(workerid);
+  workers_lock_.unlock();
+  return Status::OK;
+}
+
 // TODO(rkn): This could execute multiple times with the same arguments before
 // the delivery finishes, but we only want it to happen once. Currently, the
 // redundancy is handled by the object store, which will only execute the
@@ -202,12 +355,23 @@ Status SchedulerService::SchedulerInfo(ServerContext* context, const SchedulerIn
 // future.
 //
 // deliver_object assumes that the aliasing for objref has already been completed. That is, has_canonical_objref(objref) == true
-void SchedulerService::deliver_object(ObjRef objref, ObjStoreId from, ObjStoreId to) {
+// deliver_object returns a bool. True indicates that the delivery was
+// successfully started. False indicates that the delivery did not successfully
+// start.
+bool SchedulerService::deliver_object(ObjRef objref, ObjStoreId from, ObjStoreId to) {
   if (from == to) {
     ORCH_LOG(ORCH_FATAL, "attempting to deliver objref " << objref << " from objstore " << from << " to itself.");
   }
   if (!has_canonical_objref(objref)) {
     ORCH_LOG(ORCH_FATAL, "attempting to deliver objref " << objref << ", but this objref does not yet have a canonical objref.");
+  }
+  if (!objstores_[from].alive) {
+    ORCH_LOG(ORCH_INFO, "attempting to deliver objref " << objref << " from objstore " << from << " to objstore " << to << ", but objstore " << from << " is not alive.");
+    return false;
+  }
+  if (!objstores_[to].alive) {
+    ORCH_LOG(ORCH_INFO, "attempting to deliver objref " << objref << " from objstore " << from << " to objstore " << to << ", but objstore " << to << " is not alive.");
+    return false;
   }
   ClientContext context;
   AckReply reply;
@@ -217,6 +381,7 @@ void SchedulerService::deliver_object(ObjRef objref, ObjStoreId from, ObjStoreId
   std::lock_guard<std::mutex> lock(objstores_lock_);
   request.set_objstore_address(objstores_[from].address);
   objstores_[to].objstore_stub->StartDelivery(&context, request, &reply);
+  return true; // TODO(rkn): Actually parse the reply and see if it succeeded or failed.
 }
 
 void SchedulerService::schedule() {
@@ -232,34 +397,88 @@ void SchedulerService::schedule() {
   perform_notify_aliases(); // See what we can do in alias_notification_queue_
 }
 
-void SchedulerService::submit_task(std::unique_ptr<Call> call, WorkerId workerid) {
-  // submit task assumes that the canonical objrefs for its arguments are all ready, that is has_canonical_objref() is true for all of the call's arguments
+// submit task assumes that the canonical objrefs for its arguments are all
+// ready, that is has_canonical_objref() is true for all of the call's arguments
+// This method returns true if the task was successfully submitted and false if
+// the task was not successfully submitted.
+bool SchedulerService::submit_task(TaskId taskid, const Call& call, bool is_new_task, WorkerId workerid) {
+  // computation_graph_lock_.lock();
+  // Call* call = computation_graph_.get_task(taskid);
+  // computation_graph_lock_.unlock();
   ClientContext context;
   InvokeCallRequest request;
   InvokeCallReply reply;
+  ORCH_LOG(ORCH_INFO, "Scheduler attempting to submit_task " << taskid << " to worker " << workerid << ".");
   ORCH_LOG(ORCH_INFO, "starting to send arguments");
-  for (size_t i = 0; i < call->arg_size(); ++i) {
-    if (!call->arg(i).has_obj()) {
-      ObjRef objref = call->arg(i).ref();
+  for (size_t i = 0; i < call.arg_size(); ++i) {
+    if (!call.arg(i).has_obj()) {
+      ObjRef objref = call.arg(i).ref();
+      // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: AAAA");
       ObjRef canonical_objref = get_canonical_objref(objref);
       {
         // Notify the relevant objstore about potential aliasing when it's ready
+        // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: BBBB");
         std::lock_guard<std::mutex> alias_notification_queue_lock(alias_notification_queue_lock_);
         alias_notification_queue_.push_back(std::make_pair(get_store(workerid), std::make_pair(objref, canonical_objref)));
       }
+      // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: CCCC");
       attempt_notify_alias(get_store(workerid), objref, canonical_objref);
 
-      ORCH_LOG(ORCH_DEBUG, "call contains object ref " << canonical_objref);
+      // ORCH_LOG(ORCH_DEBUG, "call contains object ref " << canonical_objref);
+      // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: DDDD");
       std::lock_guard<std::mutex> objtable_lock(objtable_lock_);
       auto &objstores = objtable_[canonical_objref];
+      // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: EEEE");
       std::lock_guard<std::mutex> workers_lock(workers_lock_);
       if (!std::binary_search(objstores.begin(), objstores.end(), workers_[workerid].objstoreid)) { // TODO(rkn): replace this with get_store
-        deliver_object(canonical_objref, pick_objstore(canonical_objref), workers_[workerid].objstoreid); // TODO(rkn): replace this with get_store
+        // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: FFFF");
+        if (!deliver_object(canonical_objref, pick_objstore(canonical_objref), workers_[workerid].objstoreid)) { // TODO(rkn): replace this with get_store
+          return false; // If the scheduler fails to initiate one of the deliveries, then submit_task has failed.
+        }
       }
+      // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: GGGG");
+    }
+    // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: HHHH");
+  }
+
+  // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: IIII");
+  current_tasks_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: IIII: ARE WE GETTING HERE?");
+  if (current_tasks_[workerid].first != NO_TASK) {
+    ORCH_LOG(ORCH_FATAL, "Attempting to submit_task to worker " << workerid << ", but current_tasks_[workerid].first != NO_TASK.");
+  }
+  current_tasks_[workerid].first = taskid;
+  current_tasks_[workerid].second.first = is_new_task;
+  current_tasks_[workerid].second.second = 0;
+  current_tasks_lock_.unlock();
+  // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: IIII");
+
+  CallToExecute call_to_execute;
+  call_to_execute.mutable_call()->CopyFrom(call);
+  call_to_execute.set_first_execution(is_new_task);
+  for (int i = 0; i < call.result_size(); ++i) {
+    call_to_execute.add_store_output(!already_present(call.result(i)));
+    if (is_new_task && already_present(call.result(i))) {
+      ORCH_LOG(ORCH_FATAL, "Task " << taskid << " is new, but objref " << call.result(i) << " is already present.");
     }
   }
-  request.set_allocated_call(call.release()); // protobuf object takes ownership
-  Status status = workers_[workerid].worker_stub->InvokeCall(&context, request, &reply);
+
+  request.mutable_call()->CopyFrom(call_to_execute);
+
+  // ORCH_LOG(ORCH_DEBUG, "IN SUBMIT_TASK: call_to_execute.call().name() = " << request.call().call().name());
+
+  // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: JJJJ");
+  workers_lock_.lock();
+  if (!workers_[workerid].alive) {
+    ORCH_LOG(ORCH_FATAL, "Scheduler attempting to submit_task to worker " << workerid << ", but this worker is no longer alive.");
+  }
+  Status status = workers_[workerid].worker_stub->InvokeCall(&context, request, &reply); // TODO(rkn): We shouldn't be holding on to workers_lock_ while doing a GRPC call.
+
+  // ORCH_LOG(ORCH_DEBUG, "IN SUBMIT_TASK: call_to_execute.call().name() = " << request.call().call().name());
+
+  workers_lock_.unlock();
+  // ORCH_LOG(ORCH_DEBUG, "    IN SUBMIT_TASK: KKKK");
+  return true;
 }
 
 bool SchedulerService::can_run(const Call& task) {
@@ -296,17 +515,23 @@ std::pair<WorkerId, ObjStoreId> SchedulerService::register_worker(const std::str
   if (objstoreid == std::numeric_limits<size_t>::max()) {
     ORCH_LOG(ORCH_FATAL, "object store with address " << objstore_address << " not yet registered");
   }
-  workers_lock_.lock();
+  // current_tasks_ and avail_workers_ need to be updated at the same time.
+  std::lock_guard<std::mutex> current_tasks_lock(current_tasks_lock_);
+  std::lock_guard<std::mutex> avail_workers_lock(avail_workers_lock_);
+  std::lock_guard<std::mutex> workers_lock(workers_lock_);
   WorkerId workerid = workers_.size();
+  if (current_tasks_.size() != workerid) {
+    ORCH_LOG(ORCH_FATAL, "Attempting to register_worker, but workers_.size() != current_tasks_.size().");
+  }
   workers_.push_back(WorkerHandle());
   auto channel = grpc::CreateChannel(worker_address, grpc::InsecureChannelCredentials());
+  workers_[workerid].alive = true;
   workers_[workerid].channel = channel;
   workers_[workerid].objstoreid = objstoreid;
   workers_[workerid].worker_stub = WorkerService::NewStub(channel);
-  workers_lock_.unlock();
-  avail_workers_lock_.lock();
+  current_tasks_.push_back(std::make_pair(NO_TASK, std::make_pair(false, 0)));
   avail_workers_.push_back(workerid);
-  avail_workers_lock_.unlock();
+
   return std::make_pair(workerid, objstoreid);
 }
 
@@ -352,6 +577,9 @@ void SchedulerService::add_location(ObjRef canonical_objref, ObjStoreId objstore
   if (canonical_objref >= objtable_.size()) {
     ORCH_LOG(ORCH_FATAL, "trying to put an object in the object store that was not registered with the scheduler (objref " << canonical_objref << ")");
   }
+  if (std::binary_search(objtable_[canonical_objref].begin(), objtable_[canonical_objref].end(), objstoreid)) {
+    ORCH_LOG(ORCH_FATAL, "attempting to add objstore " << objstoreid << " to objtable for canonical_objref " << canonical_objref << ", but the objstore is already present in objtable_.");
+  }
   // do a binary search
   auto pos = std::lower_bound(objtable_[canonical_objref].begin(), objtable_[canonical_objref].end(), objstoreid);
   if (pos == objtable_[canonical_objref].end() || objstoreid < *pos) {
@@ -372,6 +600,9 @@ void SchedulerService::add_canonical_objref(ObjRef objref) {
 
 ObjStoreId SchedulerService::get_store(WorkerId workerid) {
   std::lock_guard<std::mutex> lock(workers_lock_);
+  if (!workers_[workerid].alive) {
+    ORCH_LOG(ORCH_FATAL, "Scheduler attempting to call get_store on worker " << workerid << ", but this worker is no longer alive.");
+  }
   ObjStoreId result = workers_[workerid].objstoreid;
   return result;
 }
@@ -384,24 +615,69 @@ void SchedulerService::register_function(const std::string& name, WorkerId worke
 }
 
 void SchedulerService::get_info(const SchedulerInfoRequest& request, SchedulerInfoReply* reply) {
-  // TODO(rkn): Also grab the objstores_lock_
-  // alias_notification_queue_lock_ may need to come before objtable_lock_
-  std::lock_guard<std::mutex> reference_counts_lock(reference_counts_lock_);
-  std::lock_guard<std::mutex> contained_objrefs_lock(contained_objrefs_lock_);
-  std::lock_guard<std::mutex> objtable_lock(objtable_lock_);
-  std::lock_guard<std::mutex> pull_queue_lock(pull_queue_lock_);
-  std::lock_guard<std::mutex> target_objrefs_lock(target_objrefs_lock_);
-  std::lock_guard<std::mutex> reverse_target_objrefs_lock(reverse_target_objrefs_lock_);
-  std::lock_guard<std::mutex> fntable_lock(fntable_lock_);
-  std::lock_guard<std::mutex> avail_workers_lock(avail_workers_lock_);
-  std::lock_guard<std::mutex> task_queue_lock(task_queue_lock_);
-  std::lock_guard<std::mutex> alias_notification_queue_lock(alias_notification_queue_lock_);
+  acquire_all_locks();
+  // Return info about workers_
+  for (int i = 0; i < workers_.size(); ++i) {
+    WorkerField* worker = reply->add_worker();
+    worker->set_alive(workers_[i].alive);
+    worker->set_objstoreid(workers_[i].objstoreid);
+  }
+  // Return info about objstores_
+  for (int i = 0; i < objstores_.size(); ++i) {
+    ObjStoreField* objstore = reply->add_objstore();
+    objstore->set_alive(objstores_[i].alive);
+    objstore->set_address(objstores_[i].address);
+  }
+  // Return info about reference_counts_
   for (int i = 0; i < reference_counts_.size(); ++i) {
     reply->add_reference_count(reference_counts_[i]);
   }
+  // Return info about reverse_target_objrefs_
+  for (int i = 0; i < reverse_target_objrefs_.size(); ++i) {
+    ObjRefList* reverse_target_objrefs = reply->add_reverse_target_objrefs();
+    for (int j = 0; j < reverse_target_objrefs_[i].size(); ++j) {
+      reverse_target_objrefs->add_objref(reverse_target_objrefs_[i][j]);
+    }
+  }
+  // Return info about alias_notification_queue_
+  for (int i = 0; i < alias_notification_queue_.size(); ++i) {
+    AliasNotification* alias_notification = reply->add_alias_notification();
+    alias_notification->set_objstoreid(alias_notification_queue_[i].first);
+    alias_notification->set_alias_objref(alias_notification_queue_[i].second.first);
+    alias_notification->set_canonical_objref(alias_notification_queue_[i].second.second);
+  }
+  // Return info about contained_objrefs_
+  for (int i = 0; i < contained_objrefs_.size(); ++i) {
+    ObjRefList* contained_objrefs = reply->add_contained_objrefs();
+    for (int j = 0; j < contained_objrefs_[i].size(); ++j) {
+      contained_objrefs->add_objref(contained_objrefs_[i][j]);
+    }
+  }
+  // Return info about pull_queue_
+  for (int i = 0; i < pull_queue_.size(); ++i) {
+    Pull* pull = reply->add_pull();
+    pull->set_workerid(pull_queue_[i].first);
+    pull->set_objref(pull_queue_[i].second);
+  }
+  // Return info about objtable_
+  for (int i = 0; i < objtable_.size(); ++i) {
+    ObjStoreList* location_list = reply->add_location_list();
+    for (int j = 0; j < objtable_[i].size(); ++j) {
+      location_list->add_objstoreid(objtable_[i][j]);
+    }
+  }
+  // Return info about current_tasks_
+  for (int i = 0; i < current_tasks_.size(); ++i) {
+    CurrentTask* current_task = reply->add_current_task();
+    current_task->set_taskid(current_tasks_[i].first);
+    current_task->set_new_task(current_tasks_[i].second.first);
+    current_task->set_num_spawned(current_tasks_[i].second.second);
+  }
+  // Return info about target_objrefs_
   for (int i = 0; i < target_objrefs_.size(); ++i) {
     reply->add_target_objref(target_objrefs_[i]);
   }
+  // Return info about fntable_
   auto function_table = reply->mutable_function_table();
   for (const auto& entry : fntable_) {
     (*function_table)[entry.first].set_num_return_vals(entry.second.num_return_vals());
@@ -409,14 +685,28 @@ void SchedulerService::get_info(const SchedulerInfoRequest& request, SchedulerIn
       (*function_table)[entry.first].add_workerid(worker);
     }
   }
+  // Return info about task_queue_
   for (const auto& entry : task_queue_) {
-    Call* call = reply->add_task();
-    call->CopyFrom(*entry);
+    reply->add_taskid(entry.first);
   }
+  // Return info about avail_workers_
   for (const WorkerId& entry : avail_workers_) {
     reply->add_avail_worker(entry);
   }
-
+  // Return info about computation_graph_.tasks_
+  for (int i = 0; i < computation_graph_.num_tasks(); ++i) {
+    Call* task = reply->add_task();
+    task->CopyFrom(computation_graph_.get_task(i));
+  }
+  // Return info about computation_graph_.spawned_tasks_
+  for (int i = 0; i < computation_graph_.num_tasks(); ++i) {
+    TaskList* spawned = reply->add_spawned_task();
+    std::vector<TaskId> spawned_tasks = computation_graph_.get_spawned_tasks(i);
+    for (int j = 0; j < spawned_tasks.size(); ++j) {
+      spawned->add_taskid(spawned_tasks[j]);
+    }
+  }
+  release_all_locks();
 }
 
 // pick_objstore assumes that objtable_lock_ has been acquired
@@ -439,6 +729,26 @@ bool SchedulerService::is_canonical(ObjRef objref) {
   return objref == target_objrefs_[objref];
 }
 
+// This returns true if the objref is a canonical objref which has already been
+// stored in an object store or if it is a non-canonical objref which has
+// already been aliased (it's corresponding canonical objref doesn't have to be
+// present in an object store yet). This returns false otherwise.
+bool SchedulerService::already_present(ObjRef objref) {
+  target_objrefs_lock_.lock();
+  ObjRef target_objref = target_objrefs_[objref];
+  target_objrefs_lock_.unlock();
+  if (target_objref == UNITIALIZED_ALIAS) {
+    return false;
+  }
+  if (target_objref != objref) {
+    return true;
+  }
+  objtable_lock_.lock();
+  bool is_present = (objtable_[objref].size() > 0);
+  objtable_lock_.unlock();
+  return is_present;
+}
+
 void SchedulerService::perform_pulls() {
   std::lock_guard<std::mutex> pull_queue_lock(pull_queue_lock_);
   // Complete all pull tasks that can be completed.
@@ -458,51 +768,85 @@ void SchedulerService::perform_pulls() {
     objtable_lock_.unlock();
 
     if (num_stores > 0) {
+      bool delivery_started_successfully = true;
       {
         std::lock_guard<std::mutex> objtable_lock(objtable_lock_);
         if (!std::binary_search(objtable_[canonical_objref].begin(), objtable_[canonical_objref].end(), get_store(workerid))) {
           // The worker's local object store does not already contain objref, so ship
           // it there from an object store that does have it.
           ObjStoreId objstoreid = pick_objstore(canonical_objref);
-          deliver_object(canonical_objref, objstoreid, get_store(workerid));
+          delivery_started_successfully = deliver_object(canonical_objref, objstoreid, get_store(workerid));
         }
       }
-      {
-        // Notify the relevant objstore about potential aliasing when it's ready
-        std::lock_guard<std::mutex> alias_notification_queue_lock(alias_notification_queue_lock_);
-        alias_notification_queue_.push_back(std::make_pair(get_store(workerid), std::make_pair(objref, canonical_objref)));
+      if (delivery_started_successfully) {
+        {
+          // Notify the relevant objstore about potential aliasing when it's ready
+          std::lock_guard<std::mutex> alias_notification_queue_lock(alias_notification_queue_lock_);
+          alias_notification_queue_.push_back(std::make_pair(get_store(workerid), std::make_pair(objref, canonical_objref)));
+        }
+        // Remove the pull task from the queue
+        std::swap(pull_queue_[i], pull_queue_[pull_queue_.size() - 1]);
+        pull_queue_.pop_back();
+        i -= 1;
       }
-      // Remove the pull task from the queue
-      std::swap(pull_queue_[i], pull_queue_[pull_queue_.size() - 1]);
-      pull_queue_.pop_back();
-      i -= 1;
     }
   }
 }
 
 void SchedulerService::schedule_tasks_naively() {
+  // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: acquiring computation_graph");
+  std::lock_guard<std::mutex> computation_graph_lock(computation_graph_lock_); // TODO(rkn): Ideally we wouldn't hold these locks the whole time, it can probably be more fine-grained
+  // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: acquiring fntable");
   std::lock_guard<std::mutex> fntable_lock(fntable_lock_);
+  // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: acquiring avail_workers");
   std::lock_guard<std::mutex> avail_workers_lock(avail_workers_lock_);
+  // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: acquiring task_queue");
   std::lock_guard<std::mutex> task_queue_lock(task_queue_lock_);
   for (int i = 0; i < avail_workers_.size(); ++i) {
     // Submit all tasks whose arguments are ready.
+    // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: AAAAA");
     WorkerId workerid = avail_workers_[i];
     for (auto it = task_queue_.begin(); it != task_queue_.end(); ++it) {
+      // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: BBBBB");
       // The use of erase(it) below invalidates the iterator, but we
       // immediately break out of the inner loop, so the iterator is not used
       // after the erase
-      const Call& task = *(*it);
+      std::pair<TaskId, bool> task_info = *it;
+      TaskId taskid = task_info.first;
+      bool is_new_task = task_info.second;
+      // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: CCCCC");
+      const Call& task = computation_graph_.get_task(taskid);
       auto& workers = fntable_[task.name()].workers();
+      // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: DDDDD");
       if (std::binary_search(workers.begin(), workers.end(), workerid) && can_run(task)) {
-        submit_task(std::move(*it), workerid);
-        task_queue_.erase(it);
-        std::swap(avail_workers_[i], avail_workers_[avail_workers_.size() - 1]);
-        avail_workers_.pop_back();
-        i -= 1;
-        break;
+        // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: EEEEE");
+        // submit_task(taskid, is_new_task, workerid);
+
+        if (!workers_[workerid].alive) {
+          // TODO(rkn): Remove this check, this is just for debugging.
+          ORCH_LOG(ORCH_FATAL, "At line 798: Scheduler about to submit_task to worker " << workerid << ", but this worker is no longer alive.");
+        }
+
+        // TODO(rkn): submit_task updates current_tasks_, and avail_workers_ is
+        // updated below. But really these should be updated in the same place.
+        if (submit_task(taskid, task, is_new_task, workerid)) {
+          // If the task is successfully submitted, remove it from task_queue_.
+          // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: FFFFF");
+          task_queue_.erase(it);
+          // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: GGGGG");
+          std::swap(avail_workers_[i], avail_workers_[avail_workers_.size() - 1]);
+          // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: HHHHH");
+          avail_workers_.pop_back();
+          // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: IIIII");
+          i -= 1;
+          break;
+        }
       }
+      // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: JJJJJ");
     }
+    // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: KKKKK");
   }
+  // ORCH_LOG(ORCH_DEBUG, "In schedule_tasks: releasing fntable_lock");
 }
 
 void SchedulerService::schedule_tasks_location_aware() {
@@ -552,6 +896,7 @@ void SchedulerService::schedule_tasks_location_aware() {
 }
 
 void SchedulerService::perform_notify_aliases() {
+  ORCH_LOG(ORCH_DEBUG, "In perform_notify_aliases: Attempting to acquire alias_notification_queue_lock!!");
   std::lock_guard<std::mutex> alias_notification_queue_lock(alias_notification_queue_lock_);
   for (int i = 0; i < alias_notification_queue_.size(); ++i) {
     const std::pair<WorkerId, std::pair<ObjRef, ObjRef> > alias_notification = alias_notification_queue_[i];
@@ -565,6 +910,7 @@ void SchedulerService::perform_notify_aliases() {
       i -= 1;
     }
   }
+  ORCH_LOG(ORCH_DEBUG, "Exiting perform_notify_aliases");
 }
 
 bool SchedulerService::has_canonical_objref(ObjRef objref) {
@@ -633,6 +979,7 @@ void SchedulerService::deallocate_object(ObjRef canonical_objref) {
   // these methods require reference_counts_lock_ to have been acquired, and
   // so the lock must before outside of these methods (it is acquired in
   // DecrementRefCount).
+  ORCH_LOG(ORCH_DEBUG, "DEALLOCATING CANONICAL_OBJREF " << canonical_objref << ".");
   ORCH_LOG(ORCH_REFCOUNT, "Deallocating canonical_objref " << canonical_objref << ".");
   {
     std::lock_guard<std::mutex> objtable_lock(objtable_lock_);
@@ -647,7 +994,6 @@ void SchedulerService::deallocate_object(ObjRef canonical_objref) {
       ORCH_LOG(ORCH_REFCOUNT, "Attempting to deallocate canonical_objref " << canonical_objref << " from objstore " << objstoreid);
       objstores_[objstoreid].objstore_stub->DeallocateObject(&context, request, &reply);
     }
-    objtable_[canonical_objref].clear();
   }
   decrement_ref_count(contained_objrefs_[canonical_objref]);
 }
@@ -737,6 +1083,229 @@ char* get_cmd_option(char** begin, char** end, const std::string& option) {
     return *it;
   }
   return 0;
+}
+
+void SchedulerService::recover_from_failed_objstore(ObjStoreId objstoreid) {
+  // This method must do the following:
+  //   - remove objstoreid from all relevant entries in objtable_
+  //   - reassign all of this object store's workers to a different object store TODO(rkn): Or should we just assume those workers are all dead.
+  // ORCH_LOG(ORCH_DEBUG, "SCHEDULER IN RECOVER_FROM_FAILED_OBJSTORE: 11111");
+  // TODO(rkn): Right now we are blocking here presumably because some scheduler methods are waiting for a killed worker and holding a lock.
+  // TRY DELETING THE RELEVANT OBJSTORE AND WORKER SMART POINTERS
+  // objstores_[objstoreid].objstore_stub.reset(); // TODO(rkn): Really I'd prefer to do this inside a lock
+  acquire_all_locks();
+  // ORCH_LOG(ORCH_DEBUG, "SCHEDULER IN RECOVER_FROM_FAILED_OBJSTORE: 22222");
+  // Update fntable_
+  for (auto it = fntable_.begin(); it != fntable_.end(); ++it) {
+    auto workers = it->second.workers();
+    auto location = std::find(workers.begin(), workers.end(), objstoreid);
+    if (location != workers.end()) {
+      workers.erase(location);
+    }
+  }
+  // Update objtable_
+  // REDO THIS AS FOLLOWS:
+  // 1) make a list of all the objects that are no longer in the object store (either lost or were never present)
+  // 2) remove all of the objects that will be created by a current task
+  // 3) remove all of the objects that will be created by something in the task queue
+
+  std::vector<std::vector<ObjRef> > tasks_to_rerun(objtable_.size()); // if tasks_to_rerun[i] is non-empty, then we must rerun task i to recompute the objrefs in tasks_to_rerun[i]
+  std::vector<ObjRef> objrefs_to_increment;
+  for (ObjRef i = 0; i < objtable_.size(); ++i) {
+    auto it = std::find(objtable_[i].begin(), objtable_[i].end(), objstoreid);
+    if (it != objtable_[i].end()) {
+      if (objtable_[i].size() == 1) {
+        ORCH_LOG(ORCH_DEBUG, "LOST OBJREF " << i << ".........");
+      }
+      objtable_[i].erase(it);
+      if (objtable_[i].size() == 0) {
+        // We lost object i, so note that we need to recompute it
+        TaskId taskid = computation_graph_.get_creator_taskid(i);
+        ORCH_LOG(ORCH_DEBUG, "We lost objref " << i << " so we need to re-run task " << taskid << " to recompute it.");
+        tasks_to_rerun[taskid].push_back(i);
+        contained_objrefs_[i].clear(); // When we reconstruct the object, we will call AddContainedObjRefs again, which will fail if it is not cleared now.
+        const Call& task = computation_graph_.get_task(taskid); // TODO(rkn): Check this code, and factor it out with the duplicate below
+        for (int j = 0; j < task.result_size(); ++j) {
+          objrefs_to_increment.push_back(task.result(j));
+        }
+      }
+    } else if (objtable_[i].size() == 0) {
+      // TODO(rkn): Document this better. This is to handle the situation where
+      // a worker finishes a task and has called WorkerReady, but the object
+      // store that was storing the output of that task dies before it calls
+      // ObjReady. For each object that isn't in any object store, if it isn't
+      // going to be created by a currently running task or by a task in the
+      // task_queue_, then we must rerun the creator task.
+      bool must_rerun_task = true;
+      TaskId taskid = computation_graph_.get_creator_taskid(i);
+      for (int j = 0; j < task_queue_.size(); ++j) {
+        if (task_queue_[j].first == taskid) {
+          must_rerun_task = false;
+        }
+      }
+      for (int j = 0; j < current_tasks_.size(); ++j) {
+        if (workers_[j].alive && current_tasks_[j].first == taskid) {
+          must_rerun_task = false;
+        }
+      }
+      if (must_rerun_task) {
+        ORCH_LOG(ORCH_DEBUG, "objref " << i << " is not present and will not be created by any currently running task or any task in the task_queue_, so we must rerun the task. This means that the worker finished but the object store died before calling ObjReady.");
+        tasks_to_rerun[taskid].push_back(i);
+        contained_objrefs_[i].clear(); // When we reconstruct the object, we will call AddContainedObjRefs again, which will fail if it is not cleared now.
+        const Call& task = computation_graph_.get_task(taskid); // TODO(rkn): Check this code, and factor it out with the duplicate above
+        for (int j = 0; j < task.result_size(); ++j) {
+          objrefs_to_increment.push_back(task.result(j));
+        }
+      }
+    }
+  }
+  // We are pushing tasks onto the task_queue_. When these tasks get
+  // deserialized, the objrefs for the results will be decremented. Normally,
+  // the corresponding increment happens in RemoteCall, but that isn't happening
+  // when we handle fault tolerance. So we do it manually here and keep track of
+  // which objrefs to increment in objref_to_increment. TODO(rkn): figure out a
+  // better way to do this.
+  increment_ref_count(objrefs_to_increment);
+  // Run the tasks.
+  for (int i = 0; i < tasks_to_rerun.size(); ++i) {
+    if (tasks_to_rerun[i].size() > 0) {
+      // We lost some objects that were created by this task, so rerun the task.
+      // task_queue_.push_back(std::make_pair(i, TaskRunType::RECOVER));
+      task_queue_.push_back(std::make_pair(i, false)); // false indicates that this task is being rerun
+    }
+  }
+
+  // ORCH_LOG(ORCH_DEBUG, "SCHEDULER IN RECOVER_FROM_FAILED_OBJSTORE: AAAAA");
+  // Update workers_
+  for (int i = 0; i < workers_.size(); ++i) {
+    if (workers_[i].objstoreid == objstoreid) { // TODO(rkn): Really I'd prefer to do this inside a lock
+      ORCH_LOG(ORCH_DEBUG, "SCHEDULER IN RECOVER_FROM_FAILED_OBJSTORE: attempting to kill worker " << i);
+      kill_worker(i); // If an object store dies, assume that all workers connected to that object store also died (and kill them just to be safe).
+    }
+  }
+  // ORCH_LOG(ORCH_DEBUG, "SCHEDULER IN RECOVER_FROM_FAILED_OBJSTORE: BBBBB");
+  // Update avail_workers_
+  ORCH_LOG(ORCH_DEBUG, "BEFORE RECOVERY, THE AVAILABLE WORKERS ARE:")
+  for (int i = 0; i < avail_workers_.size(); ++i) {
+    ORCH_LOG(ORCH_DEBUG, "-----" << avail_workers_[i]);
+  }
+  for (int i = 0; i < avail_workers_.size(); ++i) {
+    if (!workers_[avail_workers_[i]].alive) {
+      // avail_workers_[i] is no longer alive, so remove it from the avail_workers_
+      std::swap(avail_workers_[i], avail_workers_[avail_workers_.size() - 1]);
+      avail_workers_.pop_back();
+      --i;
+    }
+  }
+  ORCH_LOG(ORCH_DEBUG, "AFTER RECOVERY, THE AVAILABLE WORKERS ARE:")
+  for (int i = 0; i < avail_workers_.size(); ++i) {
+    ORCH_LOG(ORCH_DEBUG, "-----" << avail_workers_[i]);
+  }
+  // Update current_tasks_
+  for (int i = 0; i < current_tasks_.size(); ++i) {
+    if (workers_[i].objstoreid == objstoreid) {
+      TaskId taskid = current_tasks_[i].first;
+      if (taskid != NO_TASK) {
+        ORCH_LOG(ORCH_DEBUG, "Adding task " << taskid << " to the task_queue_ because it was in the middle of running during the recovery.");
+        // task_queue_.push_back(std::make_pair(taskid, TaskRunType::RETRY));
+        task_queue_.push_back(std::make_pair(taskid, false)); // false indicates that this task is being rerun
+      }
+    }
+  }
+  // Update reference counts_
+  // TODO(rkn): Implement this. If we don't do anything, the reference counts should probably be an overestimate.
+  // Update pull_queue_
+  // TODO(rkn): Implement this. Any pull going to a dead worker should be invalidated.
+  // Update alias_notification_queue_
+  // TODO(rkn): Implement this. Any alias notification going to a dead objstore should be invalidated.
+
+  // Recover lost objects
+  // for (tasks that need to be rerun) {
+  //   rerun task with the objects that need to be computed
+  // }
+
+  release_all_locks();
+  // ORCH_LOG(ORCH_DEBUG, "SCHEDULER IN RECOVER_FROM_FAILED_OBJSTORE: 33333");
+  schedule();
+}
+
+void SchedulerService::recover_from_failed_worker(WorkerId workerid) {
+  // This method must do the following:
+  //   - remove the worker that died from all relevant entries in fntable_
+  //   - remove the worker from avail_workers_
+  //   - remove the worker from current_tasks_ TODO(rkn): or not?
+
+}
+
+// This method assumes that objstores_lock_ has been acquired.
+void SchedulerService::kill_objstore(ObjStoreId objstoreid) {
+  ClientContext terminate_context;
+  AckReply terminate_reply;
+  TerminateObjStoreRequest terminate_request;
+  objstores_[objstoreid].objstore_stub->Terminate(&terminate_context, terminate_request, &terminate_reply);
+  objstores_[objstoreid].alive = false;
+}
+
+// This method assumes that workers_lock_ has been acquired.
+void SchedulerService::kill_worker(WorkerId workerid) {
+  ClientContext terminate_context;
+  AckReply terminate_reply;
+  TerminateWorkerRequest terminate_request;
+  workers_[workerid].worker_stub->Terminate(&terminate_context, terminate_request, &terminate_reply);
+  workers_[workerid].alive = false;
+  workers_[workerid].worker_stub.reset();
+}
+
+// This method defines the canonical order in which locks should be acquired.
+void SchedulerService::acquire_all_locks() {
+  // TODO(rkn): alias_notification_queue_lock_ may need to come before objtable_lock_
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring computation_graph");
+  computation_graph_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring current_tasks");
+  current_tasks_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring reference_counts");
+  reference_counts_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring contained_objrefs");
+  contained_objrefs_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring objtable");
+  objtable_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring pull_queue");
+  pull_queue_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring target_objrefs");
+  target_objrefs_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring reverse_target_objrefs");
+  reverse_target_objrefs_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring fntable");
+  fntable_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring avail_workers");
+  avail_workers_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring task_queue");
+  task_queue_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring alias_notification_queue");
+  alias_notification_queue_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring objstores");
+  objstores_lock_.lock();
+  // ORCH_LOG(ORCH_DEBUG, "In ACQUIRE_ALL_LOCKS: acquiring workers");
+  workers_lock_.lock();
+}
+
+void SchedulerService::release_all_locks() {
+  // These locks should appear in the same order as in acquire_all_locks().
+  // ORCH_LOG(ORCH_DEBUG, "RELEASING ALL LOCKS");
+  computation_graph_lock_.unlock();
+  current_tasks_lock_.unlock();
+  reference_counts_lock_.unlock();
+  contained_objrefs_lock_.unlock();
+  objtable_lock_.unlock();
+  pull_queue_lock_.unlock();
+  target_objrefs_lock_.unlock();
+  reverse_target_objrefs_lock_.unlock();
+  fntable_lock_.unlock();
+  avail_workers_lock_.unlock();
+  task_queue_lock_.unlock();
+  alias_notification_queue_lock_.unlock();
+  objstores_lock_.unlock();
+  workers_lock_.unlock();
 }
 
 int main(int argc, char** argv) {

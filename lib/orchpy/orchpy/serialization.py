@@ -33,7 +33,11 @@ def serialize_call(worker_capsule, func_name, args):
   primitive_args = [(arg if isinstance(arg, orchpy.lib.ObjRef) else to_primitive(arg)) for arg in args]
   return orchpy.lib.serialize_call(worker_capsule, func_name, primitive_args)
 
-def deserialize_call(worker_capsule, call):
-  func_name, primitive_args, return_objrefs = orchpy.lib.deserialize_call(worker_capsule, call)
+def deserialize_call(worker_capsule, call, first_execution):
+  # print "DESERIALIZE_CALL: aaa"
+  # print "call = {}".format(call)
+  func_name, primitive_args, return_objrefs = orchpy.lib.deserialize_call(worker_capsule, call, first_execution)
+  # print "DESERIALIZE_CALL: bbb"
   args = [(arg if isinstance(arg, orchpy.lib.ObjRef) else from_primitive(arg)) for arg in primitive_args]
+  # print "DESERIALIZE_CALL: ccc"
   return func_name, args, return_objrefs

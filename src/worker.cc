@@ -10,9 +10,14 @@ extern "C" {
 
 Status WorkerServiceImpl::InvokeCall(ServerContext* context, const InvokeCallRequest* request, InvokeCallReply* reply) {
   call_ = request->call(); // Copy call
-  ORCH_LOG(ORCH_INFO, "invoked task " << request->call().name());
-  Call* callptr = &call_;
+  ORCH_LOG(ORCH_INFO, "invoked task " << request->call().call().name());
+  CallToExecute* callptr = &call_;
   send_queue_.send(&callptr);
+  return Status::OK;
+}
+
+Status WorkerServiceImpl::Terminate(ServerContext* context, const TerminateWorkerRequest* request, AckReply* reply) {
+  ORCH_LOG(ORCH_FATAL, "Worker is exiting because it received a termination request.");
   return Status::OK;
 }
 
@@ -24,13 +29,17 @@ Worker::Worker(const std::string& worker_address, std::shared_ptr<Channel> sched
   connected_ = true;
 }
 
-RemoteCallReply Worker::remote_call(RemoteCallRequest* request) {
+RemoteCallReply Worker::remote_call(Call* call) {
   if (!connected_) {
     ORCH_LOG(ORCH_FATAL, "Attempting to perform remote_call, but connected_ = " << connected_ << ".");
   }
+  RemoteCallRequest request;
+  request.set_workerid(workerid_);
+  request.set_allocated_call(call);
   RemoteCallReply reply;
   ClientContext context;
-  Status status = scheduler_stub_->RemoteCall(&context, *request, &reply);
+  Status status = scheduler_stub_->RemoteCall(&context, request, &reply);
+  request.release_call(); // TODO: Make sure that call is not moved, otherwise capsule pointer needs to be updated
   return reply;
 }
 
@@ -54,16 +63,19 @@ void Worker::request_object(ObjRef objref) {
   if (!connected_) {
     ORCH_LOG(ORCH_FATAL, "Attempting to perform request_object, but connected_ = " << connected_ << ".");
   }
+  ORCH_LOG(ORCH_DEBUG, "REQUEST_OBJECT: AAA");
   RequestObjRequest request;
   request.set_workerid(workerid_);
   request.set_objref(objref);
   AckReply reply;
   ClientContext context;
+  ORCH_LOG(ORCH_DEBUG, "REQUEST_OBJECT: BBB");
   Status status = scheduler_stub_->RequestObj(&context, request, &reply);
+  ORCH_LOG(ORCH_DEBUG, "REQUEST_OBJECT: CCC");
   return;
 }
 
-ObjRef Worker::get_objref() {
+std::pair<ObjRef, bool> Worker::get_objref() {
   // first get objref for the new object
   if (!connected_) {
     ORCH_LOG(ORCH_FATAL, "Attempting to perform get_objref, but connected_ = " << connected_ << ".");
@@ -72,7 +84,7 @@ ObjRef Worker::get_objref() {
   PushObjReply push_reply;
   ClientContext push_context;
   Status push_status = scheduler_stub_->PushObj(&push_context, push_request, &push_reply);
-  return push_reply.objref();
+  return std::make_pair(push_reply.objref(), push_reply.already_present());
 }
 
 slice Worker::get_object(ObjRef objref) {
@@ -80,16 +92,21 @@ slice Worker::get_object(ObjRef objref) {
   if (!connected_) {
     ORCH_LOG(ORCH_FATAL, "Attempting to perform get_object, but connected_ = " << connected_ << ".");
   }
+  ORCH_LOG(ORCH_DEBUG, "GET_OBJECT: AAA");
   ObjRequest request;
   request.workerid = workerid_;
   request.type = ObjRequestType::GET;
   request.objref = objref;
+  ORCH_LOG(ORCH_DEBUG, "GET_OBJECT: BBB");
   request_obj_queue_.send(&request);
   ObjHandle result;
+  ORCH_LOG(ORCH_DEBUG, "GET_OBJECT: CCC");
   receive_obj_queue_.receive(&result);
+  ORCH_LOG(ORCH_DEBUG, "GET_OBJECT: DDD");
   slice slice;
   slice.data = segmentpool_->get_address(result);
   slice.len = result.size();
+  ORCH_LOG(ORCH_DEBUG, "GET_OBJECT: EEE");
   return slice;
 }
 
@@ -257,8 +274,8 @@ void Worker::register_function(const std::string& name, size_t num_return_vals) 
   scheduler_stub_->RegisterFunction(&context, request, &reply);
 }
 
-Call* Worker::receive_next_task() {
-  Call* call;
+CallToExecute* Worker::receive_next_task() {
+  CallToExecute* call;
   receive_queue_.receive(&call);
   return call;
 }
@@ -268,10 +285,12 @@ void Worker::notify_task_completed() {
     ORCH_LOG(ORCH_FATAL, "Attempting to perform notify_task_completed, but connected_ = " << connected_ << ".");
   }
   ClientContext context;
+  ORCH_LOG(ORCH_DEBUG, "WORKER " << workerid_ << " IS READY NOW, CALLING WORKERREADY.");
   WorkerReadyRequest request;
   request.set_workerid(workerid_);
   AckReply reply;
   scheduler_stub_->WorkerReady(&context, request, &reply);
+  ORCH_LOG(ORCH_DEBUG, "WORKER " << workerid_ << " IS READY NOW, CALLED WORKERREADY.");
 }
 
 void Worker::disconnect() {
@@ -282,12 +301,54 @@ bool Worker::connected() {
   return connected_;
 }
 
-// TODO(rkn): Should we be using pointers or references? And should they be const?
-void Worker::scheduler_info(ClientContext &context, SchedulerInfoRequest &request, SchedulerInfoReply &reply) {
+std::string* Worker::scheduler_info() {
   if (!connected_) {
     ORCH_LOG(ORCH_FATAL, "Attempting to get scheduler info, but connected_ = " << connected_ << ".");
   }
+  ClientContext context;
+  SchedulerInfoRequest request;
+  SchedulerInfoReply reply;
   scheduler_stub_->SchedulerInfo(&context, request, &reply);
+  std::string* reply_str = new std::string();
+  reply.SerializeToString(reply_str);
+  return reply_str;
+}
+
+std::string* Worker::objstore_info(ObjStoreId objstoreid) {
+  // TODO(rkn): Currently, we can only inspect the objstore that we're connected to. Fix this.
+  if (!connected_) {
+    ORCH_LOG(ORCH_FATAL, "Attempting to get object store info for objstore " << objstoreid << ", but connected_ = " << connected_ << ".");
+  }
+  ClientContext context;
+  ObjStoreInfoRequest request;
+  ObjStoreInfoReply reply;
+  objstore_stub_->ObjStoreInfo(&context, request, &reply);
+  std::string* reply_str = new std::string();
+  reply.SerializeToString(reply_str);
+  return reply_str;
+
+}
+
+void Worker::kill_objstore(ObjStoreId objstoreid) {
+  if (!connected_) {
+    ORCH_LOG(ORCH_FATAL, "Attempting to get kill objstore " << objstoreid << ", but connected_ = " << connected_ << ".");
+  }
+  ClientContext context;
+  KillObjStoreRequest request;
+  request.set_objstoreid(objstoreid);
+  AckReply reply;
+  scheduler_stub_->KillObjStore(&context, request, &reply);
+}
+
+void Worker::kill_worker(WorkerId workerid) {
+  if (!connected_) {
+    ORCH_LOG(ORCH_FATAL, "Attempting to get kill worker " << workerid << ", but connected_ = " << connected_ << ".");
+  }
+  ClientContext context;
+  KillWorkerRequest request;
+  request.set_workerid(workerid);
+  AckReply reply;
+  scheduler_stub_->KillWorker(&context, request, &reply);
 }
 
 // Communication between the WorkerServer and the Worker happens via a message

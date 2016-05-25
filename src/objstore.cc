@@ -97,20 +97,16 @@ Status ObjStoreService::StartDelivery(ServerContext* context, const StartDeliver
 
 Status ObjStoreService::ObjStoreInfo(ServerContext* context, const ObjStoreInfoRequest* request, ObjStoreInfoReply* reply) {
   std::lock_guard<std::mutex> memory_lock(memory_lock_);
+  reply->set_address(objstore_address_);
+  reply->set_objstoreid(objstoreid_);
   for (size_t i = 0; i < memory_.size(); ++i) {
-    if (memory_[i].second == MemoryStatusType::READY) { // is the object available?
-      reply->add_objref(i);
-    }
+    reply->add_memory(memory_[i].second);
   }
-  /*
-  for (int i = 0; i < request->objref_size(); ++i) {
-    ObjRef objref = request->objref(i);
-    Obj* obj = new Obj();
-    std::string data(memory_[objref].ptr.data, memory_[objref].ptr.len); // copies, but for debugging should be ok
-    obj->ParseFromString(data);
-    reply->mutable_obj()->AddAllocated(obj);
-  }
-  */
+  return Status::OK;
+}
+
+Status ObjStoreService::Terminate(ServerContext* context, const TerminateObjStoreRequest* request, AckReply* reply) {
+  ORCH_LOG(ORCH_FATAL, "ObjStore " << objstoreid_ << " is exiting because it received a termination request.");
   return Status::OK;
 }
 
@@ -214,19 +210,23 @@ void ObjStoreService::process_objstore_request(const ObjRequest request) {
 }
 
 void ObjStoreService::process_worker_request(const ObjRequest request) {
+  ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: AAA");
   if (request.workerid >= send_queues_.size()) {
     send_queues_.resize(request.workerid + 1);
   }
+  ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: BBB");
   if (!send_queues_[request.workerid].connected()) {
     std::string queue_name = std::string("queue:") + objstore_address_ + std::string(":worker:") + std::to_string(request.workerid) + std::string(":obj");
     send_queues_[request.workerid].connect(queue_name, false);
   }
+  ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: CCC");
   {
     std::lock_guard<std::mutex> memory_lock(memory_lock_);
     if (request.objref >= memory_.size()) {
       memory_.resize(request.objref + 1, std::make_pair(ObjHandle(), MemoryStatusType::NOT_PRESENT));
     }
   }
+  ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: DDD");
   switch (request.type) {
     case ObjRequestType::ALLOC: {
         ObjHandle handle = alloc(request.objref, request.size); // This method acquires memory_lock_
@@ -234,17 +234,22 @@ void ObjStoreService::process_worker_request(const ObjRequest request) {
       }
       break;
     case ObjRequestType::GET: {
+        ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: EEE");
         std::lock_guard<std::mutex> memory_lock(memory_lock_);
+        ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: FFF");
         std::pair<ObjHandle, MemoryStatusType>& item = memory_[request.objref];
         if (item.second == MemoryStatusType::READY) {
           ORCH_LOG(ORCH_DEBUG, "Responding to GET request: returning objref " << request.objref);
           send_queues_[request.workerid].send(&item.first);
         } else if (item.second == MemoryStatusType::NOT_READY || item.second == MemoryStatusType::NOT_PRESENT || item.second == MemoryStatusType::PRE_ALLOCED) {
+          ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: GGG");
           std::lock_guard<std::mutex> lock(pull_queue_lock_);
+          ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: HHH");
           pull_queue_.push_back(std::make_pair(request.workerid, request.objref));
         } else {
           ORCH_LOG(ORCH_FATAL, "A worker requested objref " << request.objref << ", but memory_[objref].second = " << memory_[request.objref].second);
         }
+        ORCH_LOG(ORCH_DEBUG, "IN PROCESS_WORKER_REQUEST: III");
       }
       break;
     case ObjRequestType::WORKER_DONE: {
@@ -261,7 +266,9 @@ void ObjStoreService::process_requests() {
   // TODO(rkn): Should memory_lock_ be used in this method?
   ObjRequest request;
   while (true) {
+    ORCH_LOG(ORCH_DEBUG, "IN PROCESS_REQUESTS: AAA");
     recv_queue_.receive(&request);
+    ORCH_LOG(ORCH_DEBUG, "IN PROCESS_REQUESTS: BBB");
     switch (request.type) {
       case ObjRequestType::ALLOC: {
           ORCH_LOG(ORCH_VERBOSE, "Request (worker " << request.workerid << " to objstore " << objstoreid_ << "): Allocate object with objref " << request.objref << " and size " << request.size);
@@ -323,7 +330,7 @@ void ObjStoreService::object_ready(ObjRef objref, size_t metadata_offset) {
     std::lock_guard<std::mutex> memory_lock(memory_lock_);
     std::pair<ObjHandle, MemoryStatusType>& item = memory_[objref];
     if (item.second != MemoryStatusType::NOT_READY) {
-      ORCH_LOG(ORCH_FATAL, "A worker notified the object store that objref " << objref << " has been written to the object store, but memory_[objref].second != NOT_READY.");
+      ORCH_LOG(ORCH_FATAL, "A worker notified the object store that objref " << objref << " has been written to the object store, but memory_[objref].second != NOT_READY. It equals " << item.second << ".");
     }
     item.first.set_metadata_offset(metadata_offset);
     item.second = MemoryStatusType::READY;

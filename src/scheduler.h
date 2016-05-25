@@ -14,6 +14,8 @@
 #include "orchestra.grpc.pb.h"
 #include "types.pb.h"
 
+#include "computationgraph.h"
+
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerReader;
@@ -29,13 +31,26 @@ typedef size_t RefCount;
 const ObjRef UNITIALIZED_ALIAS = std::numeric_limits<ObjRef>::max();
 const RefCount DEALLOCATED = std::numeric_limits<RefCount>::max();
 
+// The following type is used to mark the state of a task that has been
+// submitted to the task_queue_ or is in current_tasks_.
+// NEW: This indicates that the task is being put in the task_queue_ or running
+// as a current task for the first time.
+// RETRY: This indicates that the task has been submitted to a worker before,
+// but the worker died before the task completed.
+// RECOVER: This indicates that the task has been run before and finished, but
+// due to a failure, we lost an object that was created by this task and so we
+// are rerunning it. The most important part of the recover
+// enum TaskRunType {NEW = 0, RETRY = 1, RECOVER = 2};
+
 struct WorkerHandle {
+  bool alive; // true if the worker is alive, false if the worker is dead
   std::shared_ptr<Channel> channel;
   std::unique_ptr<WorkerService::Stub> worker_stub;
   ObjStoreId objstoreid;
 };
 
 struct ObjStoreHandle {
+  bool alive; // true if the objstore is alive, false if the objstore is dead
   std::shared_ptr<Channel> channel;
   std::unique_ptr<ObjStore::Stub> objstore_stub;
   std::string address;
@@ -63,13 +78,23 @@ public:
   Status DecrementRefCount(ServerContext* context, const DecrementRefCountRequest* request, AckReply* reply) override;
   Status AddContainedObjRefs(ServerContext* context, const AddContainedObjRefsRequest* request, AckReply* reply) override;
   Status SchedulerInfo(ServerContext* context, const SchedulerInfoRequest* request, SchedulerInfoReply* reply) override;
+  Status KillObjStore(ServerContext* context, const KillObjStoreRequest* request, AckReply* reply) override;
+  Status KillWorker(ServerContext* context, const KillWorkerRequest* request, AckReply* reply) override;
 
-  // ask an object store to send object to another objectstore
-  void deliver_object(ObjRef objref, ObjStoreId from, ObjStoreId to);
+  // ask an object store to send object to another object store. This returns
+  // true if the delivery was successfully started. It returns false if the
+  // delivery did not successfully start. If the from object store dies during
+  // the delivery, it is the responsibility of the to object store to initiate a
+  // new delivery with the scheduler.
+  bool deliver_object(ObjRef objref, ObjStoreId from, ObjStoreId to);
   // assign a task to a worker
   void schedule();
-  // execute a task on a worker and ship required object references
-  void submit_task(std::unique_ptr<Call> call, WorkerId workerid);
+  // execute a task on a worker and ship required object references. This
+  // returns true if the task was successfully submitted and false otherwise.
+  // TODO(rkn): This shouldn't take a taskid and a task. I was just passing the
+  // taskid before and getting the task, but that required acquiring the
+  // computation_graph_lock_, which was causing deadlock. fix this.
+  bool submit_task(TaskId taskid, const Call& task, bool is_new_task, WorkerId workerid);
   // checks if the dependencies of the task are met
   bool can_run(const Call& task);
   // register a worker and its object store (if it has not been registered yet)
@@ -91,6 +116,10 @@ private:
   ObjStoreId pick_objstore(ObjRef objref);
   // checks if objref is a canonical objref
   bool is_canonical(ObjRef objref);
+  // For canonical objrefs, this is true if the corresponding object is in some
+  // object store. For non-canonical objrefs, this is true if the objref is
+  // aliased in target_objrefs_.
+  bool already_present(ObjRef objref);
 
   void perform_pulls();
   // schedule tasks using the naive algorithm
@@ -115,7 +144,21 @@ private:
   void upstream_objrefs(ObjRef objref, std::vector<ObjRef> &objrefs);
   // Find all of the object references that refer to the same object as objref (as best as we can determine at the moment). The information may be incomplete because not all of the aliases may be known.
   void get_equivalent_objrefs(ObjRef objref, std::vector<ObjRef> &equivalent_objrefs);
-
+  // Recover if an object store dies.
+  void recover_from_failed_objstore(ObjStoreId objstoreid);
+  // Recover if a worker dies.
+  void recover_from_failed_worker(WorkerId workerid);
+  // Kill a particular object store.
+  void kill_objstore(ObjStoreId objstoreid);
+  // Kill a particular worker.
+  void kill_worker(WorkerId workerid);
+  // Lock all of the scheduler's data structues.
+  void acquire_all_locks();
+  // Unlock all of the scheduler's data structures.
+  void release_all_locks();
+  // The computation graph is mostly used for fault tolerance.
+  ComputationGraph computation_graph_;
+  std::mutex computation_graph_lock_;
   // Vector of all workers registered in the system. Their index in this vector
   // is the workerid.
   std::vector<WorkerHandle> workers_;
@@ -123,6 +166,22 @@ private:
   // Vector of all workers that are currently idle.
   std::vector<WorkerId> avail_workers_;
   std::mutex avail_workers_lock_;
+  // current_tasks_[workerid].first is the taskid of the task that the worker
+  // with id workerid is currently executing, if the worker is not executing
+  // anything or if the worker is a driver, then this equals NO_TASK.
+  // current_tasks_[workerid].second.first is true if this is a brand new task
+  // and false if this task is being re-executed because of fault tolerance.
+  // current_tasks_[workerid].second.second is the number of remote calls or
+  // push calls that the currently executing task on the worker with id workerid
+  // has sent to the scheduler. This is relevant only for fault tolerance
+  // because the computation graph needs to know which object references to
+  // reuse.
+  std::vector<std::pair<TaskId, std::pair<bool, size_t> > > current_tasks_;
+  // TODO(rkn): current_tasks_ and avail_workers_ contain some of the same
+  // information so in order for them to be consistent with one another, they
+  // should use the same lock. Actually, current_tasks_ should just be a field
+  // of workers_ basically.
+  std::mutex current_tasks_lock_;
   // Vector of all object stores registered in the system. Their index in this
   // vector is the objstoreid.
   std::vector<ObjStoreHandle> objstores_;
@@ -138,13 +197,17 @@ private:
   std::vector<std::vector<ObjRef> > reverse_target_objrefs_;
   std::mutex reverse_target_objrefs_lock_;
   // Mapping from canonical objref to list of object stores where the object is stored. Non-canonical (aliased) objrefs should not be used to index objtable_.
-  ObjTable objtable_;
+  std::vector<std::vector<ObjStoreId> > objtable_;
   std::mutex objtable_lock_;
   // Hash map from function names to workers where the function is registered.
-  FnTable fntable_;
+  // TODO(rkn): FnInfo is defined in orchestra.h, but it should probably be defined here.
+  std::unordered_map<std::string, FnInfo> fntable_;
   std::mutex fntable_lock_;
-  // List of pending tasks.
-  std::deque<std::unique_ptr<Call> > task_queue_;
+  // List of pending tasks. The first component is the TaskId. The second
+  // component is true if the task is being sent to a worker for the first time
+  // and false if the task has already been sent to a worker before (it doesn't
+  // have to have completed).
+  std::deque<std::pair<TaskId, bool> > task_queue_;
   std::mutex task_queue_lock_;
   // List of pending pull calls.
   std::vector<std::pair<WorkerId, ObjRef> > pull_queue_;

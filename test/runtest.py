@@ -188,6 +188,8 @@ class ReferenceCountingTest(unittest.TestCase):
     test_path = os.path.join(test_dir, "testrecv.py")
     services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=3, worker_path=test_path)
 
+    deallocated_num = 2 ** 64 - 1 # this indicates that an object has been deallocated
+
     x = test_functions.test_alias_f()
     orchpy.pull(x)
     time.sleep(0.1)
@@ -195,7 +197,7 @@ class ReferenceCountingTest(unittest.TestCase):
     self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val] == 1)
 
     del x
-    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val] == -1) # -1 indicates deallocated
+    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val] == deallocated_num)
 
     y = test_functions.test_alias_h()
     orchpy.pull(y)
@@ -204,7 +206,7 @@ class ReferenceCountingTest(unittest.TestCase):
     self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [1, 0, 0])
 
     del y
-    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [-1, -1, -1])
+    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [deallocated_num, deallocated_num, deallocated_num])
 
     z = dist.zeros([dist.BLOCK_SIZE, 2 * dist.BLOCK_SIZE], "float")
     time.sleep(0.1)
@@ -213,7 +215,7 @@ class ReferenceCountingTest(unittest.TestCase):
 
     del z
     time.sleep(0.1)
-    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [-1, -1, -1])
+    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [deallocated_num, deallocated_num, deallocated_num])
 
     x = single.zeros([10, 10], "float")
     y = single.zeros([10, 10], "float")
@@ -224,13 +226,42 @@ class ReferenceCountingTest(unittest.TestCase):
 
     del x
     time.sleep(0.1)
-    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [-1, 1, 1])
+    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [deallocated_num, 1, 1])
     del y
     time.sleep(0.1)
-    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [-1, -1, 1])
+    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [deallocated_num, deallocated_num, 1])
     del z
     time.sleep(0.1)
-    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [-1, -1, -1])
+    self.assertTrue(orchpy.scheduler_info()["reference_counts"][objref_val:(objref_val + 3)] == [deallocated_num, deallocated_num, deallocated_num])
+
+    services.cleanup()
+
+class SchedulerInfoTest(unittest.TestCase):
+
+  def testMethods(self):
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    test_path = os.path.join(test_dir, "testrecv.py")
+    services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=3, worker_path=test_path)
+
+    info = orchpy.scheduler_info()
+    self.assertTrue(len(info["task_queue"]) == 0)
+    self.assertTrue(len(info["available_workers"]) == 3 + 1) # 3 workers and 1 driver
+    # self.assertTrue(info["function_table"] == ...)
+    self.assertTrue(info["target_objrefs"] == [])
+    self.assertTrue(info["reference_counts"] == [])
+    self.assertTrue(info["tasks"] == [])
+    self.assertTrue(info["spawned_tasks"] == [])
+
+    x = test_functions.test_alias_h()
+    time.sleep(0.1)
+    info = orchpy.scheduler_info()
+    self.assertTrue(len(info["task_queue"]) == 0)
+    self.assertTrue(len(info["available_workers"]) == 3 + 1)
+    # self.assertTrue(info["function_table"] == ...)
+    self.assertTrue(info["target_objrefs"] == [1, 2, 2])
+    self.assertTrue(info["reference_counts"] == [1, 0, 0])
+    self.assertTrue(len(info["tasks"]) == 3)
+    self.assertTrue(info["spawned_tasks"] == [[1], [2], []])
 
     services.cleanup()
 

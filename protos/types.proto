@@ -18,6 +18,7 @@ message PyObj {
 
 // Union of possible object types
 message Obj {
+  // TODO(rkn): Change this to use oneof.
   String string_data = 1;
   Int int_data = 2;
   Double double_data = 3;
@@ -54,6 +55,75 @@ message Call {
   string name = 1; // Name of the function call
   repeated Value arg = 2; // List of arguments, can be either object references or protobuf descriptions of object passed by value
   repeated uint64 result = 3; // Object references for result
+}
+
+// TODO(rkn): Find an actual name for this.
+message CallToExecute {
+  Call call = 1; // The actual call
+  repeated bool store_output = 2; // True for the outputs that the worker should store
+  // TODO(rkn): Maybe this should be called "invoked_by_scheduler" or something.
+  bool first_execution = 3; // True if the task is being run for the first time. False if it is being rerun by the scheduler.
+}
+
+// TODO(rkn): Find better name.
+message Push {
+  uint64 objref = 1; // The objref for the pushed object
+}
+
+// This is used internally by the scheduler. From the scheduler's perspective,
+// the submission of tasks (via RemoteCall) and the submission of pushes (via
+// PushObj) look very similar, and so it is useful to be able to handle them
+// Together (for example in the computation graph).
+// TODO(rkn): Find better name (actually, once we've renamed Call -> Task, then
+// rename TaskOrPush -> Call).
+message TaskOrPush {
+  // TODO(rkn): Change this to use oneof, basically
+  // oneof task_or_push {
+  //   Call task = 1;
+  //   Push push = 2;
+  // }
+  Call task = 1;
+  Push push = 2;
+  uint64 creator_taskid = 3; // The id of the task that invoked this task or push.
+}
+
+message TaskList {
+  repeated uint64 taskid = 1; // A list of TaskIds
+}
+
+message ObjStoreList {
+  repeated uint64 objstoreid = 1; // A list of ObjStoreIds
+}
+
+message ObjRefList {
+  repeated uint64 objref = 1; // A list of ObjRefs
+}
+
+message AliasNotification {
+  uint64 objstoreid = 1; // The objstoreid of the objstore to be notified
+  uint64 alias_objref = 2; // The alias objref
+  uint64 canonical_objref = 3; // The canonical objref
+}
+
+message Pull {
+  uint64 workerid = 1; // The id of the worker doing the pull
+  uint64 objref = 2; // The objref of the object being pulled
+}
+
+message CurrentTask {
+  uint64 taskid = 1; // The taskid of the task executing
+  bool new_task = 2; // True if the task is executing for the first time and false if it is re-executing for fault-tolerance reasons
+  uint64 num_spawned = 3; // The number of tasks sent to the scheduler (including pulls) so far by the currently executing task
+}
+
+message WorkerField {
+  bool alive = 1; // True if the worker is alive, false if the worker is dead
+  uint64 objstoreid = 2; // The objstoreid of the objstore that the worker is connected to
+}
+
+message ObjStoreField {
+  bool alive = 1; // True if the objstore is alive, false if the objstore is dead
+  string address = 2; // The address of the objstore
 }
 
 message Array {

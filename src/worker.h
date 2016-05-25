@@ -30,10 +30,11 @@ public:
     send_queue_.connect(worker_address_, false);
   }
   Status InvokeCall(ServerContext* context, const InvokeCallRequest* request, InvokeCallReply* reply) override;
+  Status Terminate(ServerContext* context, const TerminateWorkerRequest* request, AckReply* reply) override;
 private:
   std::string worker_address_;
-  Call call_; // copy of the current call
-  MessageQueue<Call*> send_queue_;
+  CallToExecute call_; // copy of the current call
+  MessageQueue<CallToExecute*> send_queue_;
 };
 
 class Worker {
@@ -41,11 +42,11 @@ class Worker {
   Worker(const std::string& worker_address, std::shared_ptr<Channel> scheduler_channel, std::shared_ptr<Channel> objstore_channel);
 
   // submit a remote call to the scheduler
-  RemoteCallReply remote_call(RemoteCallRequest* request);
+  RemoteCallReply remote_call(Call* call);
   // send request to the scheduler to register this worker
   void register_worker(const std::string& worker_address, const std::string& objstore_address);
   // get a new object reference that is registered with the scheduler
-  ObjRef get_objref();
+  std::pair<ObjRef, bool> get_objref();
   // request an object to be delivered to the local object store
   void request_object(ObjRef objref);
   // stores an object to the local object store
@@ -70,7 +71,7 @@ class Worker {
   // it in the message queue, which is read by the Python interpreter
   void start_worker_service();
   // wait for next task from the RPC system
-  Call* receive_next_task();
+  CallToExecute* receive_next_task();
   // tell the scheduler that we are done with the current task and request the next one
   void notify_task_completed();
   // disconnect the worker
@@ -78,7 +79,13 @@ class Worker {
   // return connected_
   bool connected();
   // get info about scheduler state
-  void scheduler_info(ClientContext &context, SchedulerInfoRequest &request, SchedulerInfoReply &reply);
+  std::string* scheduler_info();
+  // get info about a particular object store state
+  std::string* objstore_info(ObjStoreId objstoreid);
+  // tell the scheduler to kill a particular object store
+  void kill_objstore(ObjStoreId objstoreid);
+  // tell the scheduler to kill a particular worker
+  void kill_worker(WorkerId workerid);
 
  private:
   bool connected_;
@@ -86,7 +93,7 @@ class Worker {
   std::unique_ptr<Scheduler::Stub> scheduler_stub_;
   std::unique_ptr<ObjStore::Stub> objstore_stub_;
   std::thread worker_server_thread_;
-  MessageQueue<Call*> receive_queue_;
+  MessageQueue<CallToExecute*> receive_queue_;
   managed_shared_memory segment_;
   WorkerId workerid_;
   ObjStoreId objstoreid_;

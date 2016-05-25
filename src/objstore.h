@@ -44,6 +44,7 @@ public:
   Status NotifyAlias(ServerContext* context, const NotifyAliasRequest* request, AckReply* reply) override;
   Status DeallocateObject(ServerContext* context, const DeallocateObjectRequest* request, AckReply* reply) override;
   Status ObjStoreInfo(ServerContext* context, const ObjStoreInfoRequest* request, ObjStoreInfoReply* reply) override;
+  Status Terminate(ServerContext* context, const TerminateObjStoreRequest* request, AckReply* reply) override;
   void start_objstore_service();
 private:
   void pull_data_from(ObjRef objref, ObjStore::Stub& stub);

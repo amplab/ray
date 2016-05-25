@@ -2,11 +2,12 @@
 #define ORCHESTRA_INCLUDE_ORCHESTRA_H
 
 #include <vector>
-#include <unordered_map>
+#include <unordered_map> // TODO(rkn): This appears to only be used in scheduler.h, but removing it causes a compilation error.
 
 typedef size_t ObjRef;
 typedef size_t WorkerId;
 typedef size_t ObjStoreId;
+typedef size_t TaskId; // TODO(rkn): Should this be TaskOrPushId?
 
 class FnInfo {
   size_t num_return_vals_;
@@ -30,24 +31,21 @@ public:
   }
 };
 
-typedef std::vector<std::vector<ObjStoreId> > ObjTable;
-typedef std::unordered_map<std::string, FnInfo> FnTable;
-
 #define ORCH_VERBOSE -1
 #define ORCH_INFO 0
 #define ORCH_DEBUG 1
 #define ORCH_FATAL 2
-#define ORCH_REFCOUNT ORCH_VERBOSE
+#define ORCH_REFCOUNT ORCH_DEBUG
 #define ORCH_ALIAS ORCH_VERBOSE
 
 #define ORCH_LOG(LEVEL, MESSAGE) \
   if (LEVEL == ORCH_VERBOSE) { \
-    \
+    std::cout << MESSAGE << std::endl; \
   } else if (LEVEL == ORCH_FATAL) { \
     std::cerr << "fatal error occured: " << MESSAGE << std::endl; \
     std::exit(1); \
   } else if (LEVEL == ORCH_DEBUG) { \
-    \
+    std::cout << MESSAGE << std::endl; \
   } else { \
     std::cout << MESSAGE << std::endl; \
   }

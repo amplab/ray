@@ -524,7 +524,12 @@ PyObject* serialize_call(PyObject* self, PyObject* args) {
   PyObjectToWorker(worker_capsule, &worker);
   if (objrefs.size() > 0) {
     ORCH_LOG(ORCH_REFCOUNT, "In serialize_call, calling increment_reference_count for contained objrefs");
-    worker->increment_reference_count(objrefs);
+    // TODO(rkn): There is a bug. If the current task is being rerun due to fault tolerance,
+    // then when it does a remote call, we will increment some objrefs below, but the
+    // corresponding deserialize_call will never be called and so the corresponding
+    // decrement will never be called. Fix this, perhaps by doing the decrement in the
+    // scheduler in RemoteCall.
+    worker->increment_reference_count(objrefs); // The corresponding decrement is in deserialize_call.
   }
   return PyCapsule_New(static_cast<void*>(call), "call", &CallCapsule_Destructor);
 }
@@ -532,12 +537,25 @@ PyObject* serialize_call(PyObject* self, PyObject* args) {
 PyObject* deserialize_call(PyObject* self, PyObject* args) {
   PyObject* worker_capsule;
   Call* call;
-  if (!PyArg_ParseTuple(args, "OO&", &worker_capsule, &PyObjectToCall, &call)) {
+  PyObject* first_execution_obj;
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: AAA");
+  if (!PyArg_ParseTuple(args, "OO&O", &worker_capsule, &PyObjectToCall, &call, &first_execution_obj)) {
     return NULL;
   }
+  bool first_execution = PyObject_IsTrue(first_execution_obj);
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: BBB");
   std::vector<ObjRef> objrefs; // This is a vector of all the objrefs that were serialized in this call, including objrefs that are contained in Python objects that are passed by value.
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: CCC");
+  call->name();
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: DDDaaa, call->name() = " << call->name());
+  call->name().c_str();
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: DDDbbb");
+  call->name().size();
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: DDDccc");
   PyObject* string = PyString_FromStringAndSize(call->name().c_str(), call->name().size());
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: DDDddd");
   int argsize = call->arg_size();
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: DDDeee");
   PyObject* arglist = PyList_New(argsize);
   for (int i = 0; i < argsize; ++i) {
     const Value& val = call->arg(i);
@@ -548,21 +566,42 @@ PyObject* deserialize_call(PyObject* self, PyObject* args) {
       PyList_SetItem(arglist, i, deserialize(worker_capsule, val.obj(), objrefs));
     }
   }
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: EEE");
   Worker* worker;
   PyObjectToWorker(worker_capsule, &worker);
-  worker->decrement_reference_count(objrefs);
+  // TODO(rkn): There is a bug here. If the task is being rerun due to fault tolerance, then
+  // it was placed on the task_queue_ by the scheduler and the corresponding serialize_call
+  // was never called, meaning that the increment corresponding to the decrement below never
+  // happened. This can lead to the premature deallocation of some objects. Fix this, perhaps
+  // by simply having the scheduler let the worker know (in the Call object) if it is being
+  // rerun.
+  ORCH_LOG(ORCH_DEBUG, "IN DESERIALIZE_CALL AA: FIRST_EXECUTION = " << first_execution);
+  if (first_execution) {
+    ORCH_LOG(ORCH_DEBUG, "IN DESERIALIZE_CALL BB: FIRST_EXECUTION = " << first_execution);
+    worker->decrement_reference_count(objrefs); // The corresponding increment is in serialize_call.
+  }
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: FFF");
   int resultsize = call->result_size();
   std::vector<ObjRef> result_objrefs;
   PyObject* resultlist = PyList_New(resultsize);
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: GGG");
   for (int i = 0; i < resultsize; ++i) {
     PyList_SetItem(resultlist, i, make_pyobjref(worker_capsule, call->result(i)));
     result_objrefs.push_back(call->result(i));
   }
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: HHH");
+  // PyObject* outputs_to_store = PyList_New(resultsize);
+  // for (int i = 0; i < resultsize; ++i) {
+  //   PyList_SetItem(outputs_to_store, i, PyBool_FromLong(call->store_output(i)));
+  // }
   worker->decrement_reference_count(result_objrefs); // The corresponding increment is done in RemoteCall in the scheduler.
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: III");
   PyObject* t = PyTuple_New(3); // We set the items of the tuple using PyTuple_SetItem, because that transfers ownership to the tuple.
   PyTuple_SetItem(t, 0, string);
   PyTuple_SetItem(t, 1, arglist);
   PyTuple_SetItem(t, 2, resultlist);
+  // ORCH_LOG(ORCH_DEBUG, "DESERIALIZE_CALL: JJJ");
+  // PyTuple_SetItem(t, 3, outputs_to_store);
   return t;
 }
 
@@ -607,8 +646,32 @@ PyObject* wait_for_next_task(PyObject* self, PyObject* args) {
   if (!PyArg_ParseTuple(args, "O&", &PyObjectToWorker, &worker)) {
     return NULL;
   }
-  Call* call = worker->receive_next_task();
-  return PyCapsule_New(static_cast<void*>(call), "call", NULL); // This call is owned by the C++ worker class, so we do not deallocate it.
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: AAA");
+  CallToExecute* call_to_execute = worker->receive_next_task();
+
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: call_to_execute->call().name() = " << call_to_execute->call().name());
+
+  Call* call = call_to_execute->release_call(); // We take ownership of the call, TODO(rkn): Check that this is correct.
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: BBB");
+  PyObject* store_outputs = PyList_New(call_to_execute->store_output_size());
+  PyObject* first_execution = PyBool_FromLong(call_to_execute->first_execution());
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: CCC");
+  for (int i = 0; i < call_to_execute->store_output_size(); ++i) {
+    ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: DDD");
+    PyList_SetItem(store_outputs, i, PyBool_FromLong(call_to_execute->store_output(i)));
+  }
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: EEE");
+  PyObject* t = PyTuple_New(3);
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: FFF");
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: call->name() = " << call->name());
+  PyTuple_SetItem(t, 0, PyCapsule_New(static_cast<void*>(call), "call", NULL)); // This call is owned by the C++ worker class, so we do not deallocate it.
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: call->name() = " << call->name());
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: GGG");
+  PyTuple_SetItem(t, 1, store_outputs);
+  PyTuple_SetItem(t, 2, first_execution);
+  ORCH_LOG(ORCH_DEBUG, "WAIT_FOR_NEXT_TASK: HHH");
+  return t;
+  // return PyCapsule_New(static_cast<void*>(call), "call", NULL); // This call is owned by the C++ worker class, so we do not deallocate it.
 }
 
 PyObject* remote_call(PyObject* self, PyObject* args) {
@@ -619,10 +682,7 @@ PyObject* remote_call(PyObject* self, PyObject* args) {
   }
   Worker* worker;
   PyObjectToWorker(worker_capsule, &worker);
-  RemoteCallRequest request;
-  request.set_allocated_call(call);
-  RemoteCallReply reply = worker->remote_call(&request);
-  request.release_call(); // TODO: Make sure that call is not moved, otherwise capsule pointer needs to be updated
+  RemoteCallReply reply = worker->remote_call(call);
   int size = reply.result_size();
   PyObject* list = PyList_New(size);
   std::vector<ObjRef> result_objrefs;
@@ -661,8 +721,13 @@ PyObject* get_objref(PyObject* self, PyObject* args) {
   }
   Worker* worker;
   PyObjectToWorker(worker_capsule, &worker);
-  ObjRef objref = worker->get_objref();
-  return make_pyobjref(worker_capsule, objref);
+  std::pair<ObjRef, bool> objref_info = worker->get_objref();
+  ObjRef objref = objref_info.first;
+  bool already_present = objref_info.second;
+  PyObject* t = PyTuple_New(2); // We set the items of the tuple using PyTuple_SetItem, because that transfers ownership to the tuple.
+  PyTuple_SetItem(t, 0, make_pyobjref(worker_capsule, objref));
+  PyTuple_SetItem(t, 1, PyBool_FromLong(already_present));
+  return t;
 }
 
 PyObject* put_object(PyObject* self, PyObject* args) {
@@ -691,12 +756,16 @@ PyObject* get_object(PyObject* self, PyObject* args) {
   // get_object assumes that objref is a canonical objref
   Worker* worker;
   ObjRef objref;
+  ORCH_LOG(ORCH_DEBUG, "ORCHPYLIB: GET_OBJECT: AAA");
   if (!PyArg_ParseTuple(args, "O&O&", &PyObjectToWorker, &worker, &PyObjectToObjRef, &objref)) {
     return NULL;
   }
+  ORCH_LOG(ORCH_DEBUG, "ORCHPYLIB: GET_OBJECT: BBB");
   slice s = worker->get_object(objref);
+  ORCH_LOG(ORCH_DEBUG, "ORCHPYLIB: GET_OBJECT: CCC");
   Obj* obj = new Obj(); // TODO: Make sure this will get deleted
   obj->ParseFromString(std::string(reinterpret_cast<char*>(s.data), s.len));
+  ORCH_LOG(ORCH_DEBUG, "ORCHPYLIB: GET_OBJECT: DDD");
   return PyCapsule_New(static_cast<void*>(obj), "obj", &ObjCapsule_Destructor);
 }
 
@@ -735,24 +804,38 @@ PyObject* scheduler_info(PyObject* self, PyObject* args) {
   if (!PyArg_ParseTuple(args, "O&", &PyObjectToWorker, &worker)) {
     return NULL;
   }
-  ClientContext context;
-  SchedulerInfoRequest request;
-  SchedulerInfoReply reply;
-  worker->scheduler_info(context, request, reply);
+  std::string* info_string = worker->scheduler_info();
+  return PyString_FromStringAndSize(info_string->c_str(), info_string->size());
+}
 
-  PyObject* target_objref_list = PyList_New(reply.target_objref_size());
-  for (size_t i = 0; i < reply.target_objref_size(); ++i) {
-    PyList_SetItem(target_objref_list, i, PyInt_FromLong(reply.target_objref(i)));
+PyObject* objstore_info(PyObject* self, PyObject* args) {
+  Worker* worker;
+  ObjStoreId objstoreid;
+  if (!PyArg_ParseTuple(args, "O&i", &PyObjectToWorker, &worker, &objstoreid)) {
+    return NULL;
   }
-  PyObject* reference_count_list = PyList_New(reply.reference_count_size());
-  for (size_t i = 0; i < reply.reference_count_size(); ++i) {
-    PyList_SetItem(reference_count_list, i, PyInt_FromLong(reply.reference_count(i)));
-  }
+  std::string* info_string = worker->objstore_info(objstoreid); // TODO(rkn): Currently objstoreid is ignored.
+  return PyString_FromStringAndSize(info_string->c_str(), info_string->size());
+}
 
-  PyObject* dict = PyDict_New();
-  PyDict_SetItem(dict, PyString_FromString("target_objrefs"), target_objref_list);
-  PyDict_SetItem(dict, PyString_FromString("reference_counts"), reference_count_list);
-  return dict;
+PyObject* kill_objstore(PyObject* self, PyObject* args) {
+  Worker* worker;
+  ObjStoreId objstoreid;
+  if (!PyArg_ParseTuple(args, "O&i", &PyObjectToWorker, &worker, &objstoreid)) {
+    return NULL;
+  }
+  worker->kill_objstore(objstoreid);
+  Py_RETURN_NONE;
+}
+
+PyObject* kill_worker(PyObject* self, PyObject* args) {
+  Worker* worker;
+  WorkerId workerid;
+  if (!PyArg_ParseTuple(args, "O&i", &PyObjectToWorker, &worker, &workerid)) {
+    return NULL;
+  }
+  worker->kill_worker(workerid);
+  Py_RETURN_NONE;
 }
 
 static PyMethodDef OrchPyLibMethods[] = {
@@ -777,6 +860,8 @@ static PyMethodDef OrchPyLibMethods[] = {
  { "notify_task_completed", notify_task_completed, METH_VARARGS, "notify the scheduler that a task has been completed" },
  { "start_worker_service", start_worker_service, METH_VARARGS, "start the worker service" },
  { "scheduler_info", scheduler_info, METH_VARARGS, "get info about scheduler state" },
+ { "kill_objstore", kill_objstore, METH_VARARGS, "tell the scheduler to kill a particular object store" },
+ { "kill_worker", kill_worker, METH_VARARGS, "tell the scheduler to kill a particular worker" },
  { NULL, NULL, 0, NULL }
 };
 
