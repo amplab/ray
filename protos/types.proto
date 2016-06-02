@@ -56,6 +56,23 @@ message Task {
   repeated uint64 result = 3; // Object references for result
 }
 
+// TODO(rkn): Find better name.
+message Push {
+  uint64 objref = 1; // The objref for the pushed object
+}
+
+// This is used internally by the scheduler. From the scheduler's perspective,
+// the submission of tasks (via RemoteCall) and the submission of pushes (via
+// PushObj) look very similar, and so it is useful to be able to handle them
+// Together (for example in the computation graph).
+// TODO(rkn): Find better name (actually, once we've renamed Call -> Task, then
+// rename TaskOrPush -> Call).
+message TaskOrPush {
+  Call task = 1;
+  Push push = 2;
+  uint64 creator_taskid = 3; // The id of the task that invoked this task or push.
+}
+
 message Array {
   repeated uint64 shape = 1;
   sint64 dtype = 2;
