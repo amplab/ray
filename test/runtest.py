@@ -223,6 +223,13 @@ class APITest(unittest.TestCase):
     x = test_functions.keyword_fct3(0, 1)
     self.assertEqual(halo.pull(x), "0 1 hello world")
 
+    x = test_functions.varargs_fct(0, 1, 2)
+    self.assertEqual(halo.pull(x), "0 1 2")
+    x = test_functions.varargs_fct2(0, 1, 2)
+    self.assertEqual(halo.pull(x), "1 2")
+
+    self.assertTrue(test_functions.varargs_exception_thrown)
+
     services.cleanup()
 
 class ReferenceCountingTest(unittest.TestCase):

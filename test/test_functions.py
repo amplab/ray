@@ -52,3 +52,20 @@ def keyword_fct2(a="hello", b="world"):
 @halo.remote([int, int, str, str], [str])
 def keyword_fct3(a, b, c="hello", d="world"):
   return "{} {} {} {}".format(a, b, c, d)
+
+@halo.remote([int], [str])
+def varargs_fct(*a):
+  return " ".join(map(str, a))
+
+@halo.remote([int, int], [str])
+def varargs_fct2(a, *b):
+  return " ".join(map(str, b))
+
+try:
+  @halo.remote([int, int, int], [])
+  def varargs_throw_exception(a, *b, **c):
+    return ()
+
+  varargs_exception_thrown = False
+except:
+  varargs_exception_thrown = True

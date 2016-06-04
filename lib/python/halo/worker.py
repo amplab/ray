@@ -3,6 +3,7 @@ import typing
 import funcsigs
 import numpy as np
 import pynumbuf
+import collections
 
 import halo
 import serialization
@@ -118,7 +119,20 @@ def remote(arg_types, return_types, worker=global_worker):
     func_call.arg_types = arg_types
     func_call.return_types = return_types
     func_call.is_remote = True
-    func_call.keyword_defaults = [(k, v.default) for k, v in funcsigs.signature(func).parameters.iteritems()]
+    func_call.sig_params = funcsigs.signature(func).parameters
+    func_call.keyword_defaults = [(k, v.default) for k, v in func_call.sig_params.iteritems()]
+    # check if the user specified both varargs and kwargs, which is not supported at the moment
+    if len(func_call.sig_params) > 1:
+      last_param = func_call.sig_params[func_call.sig_params.keys()[-1]]
+      next_to_last_param = func_call.sig_params[func_call.sig_params.keys()[-2]]
+      if last_param.kind == last_param.VAR_KEYWORD and next_to_last_param.kind == next_to_last_param.VAR_POSITIONAL:
+        raise "Specifying both positional and keyword parameters for function {} is not allowed yet!".format(func_call.__name__)
+    # determine if function has vararg parameter
+    func_call.has_vararg_param = False
+    if len(func_call.sig_params) > 0:
+      last_param = func_call.sig_params[next(reversed(func_call.sig_params))]
+      if last_param.kind == last_param.VAR_POSITIONAL:
+        func_call.has_vararg_param = True
     return func_call
   return remote_decorator
 
@@ -138,18 +152,16 @@ def check_return_values(function, result):
 # helper method, this should not be called by the user
 def check_arguments(function, args):
   # check the number of args
-  if len(args) != len(function.arg_types) and function.arg_types[-1] is not None:
+  if len(args) != len(function.arg_types) and not function.has_vararg_param:
     raise Exception("Function {} expects {} arguments, but received {}.".format(function.__name__, len(function.arg_types), len(args)))
-  elif len(args) < len(function.arg_types) - 1 and function.arg_types[-1] is None:
+  elif len(args) < len(function.arg_types) - 1 and function.has_vararg_param:
     raise Exception("Function {} expects at least {} arguments, but received {}.".format(function.__name__, len(function.arg_types) - 1, len(args)))
 
   for (i, arg) in enumerate(args):
-    if i < len(function.arg_types) - 1:
+    if i <= len(function.arg_types) - 1:
       expected_type = function.arg_types[i]
-    elif i == len(function.arg_types) - 1 and function.arg_types[-1] is not None:
+    elif function.has_vararg_param and len(function.arg_types) >= 1:
       expected_type = function.arg_types[-1]
-    elif function.arg_types[-1] is None and len(function.arg_types) > 1:
-      expected_type = function.arg_types[-2]
     else:
       assert False, "This code should be unreachable."
 
@@ -173,12 +185,10 @@ def get_arguments_for_execution(function, args, worker=global_worker):
   """
 
   for (i, arg) in enumerate(args):
-    if i < len(function.arg_types) - 1:
+    if i <= len(function.arg_types) - 1:
       expected_type = function.arg_types[i]
-    elif i == len(function.arg_types) - 1 and function.arg_types[-1] is not None:
+    elif function.has_vararg_param and len(function.arg_types) >= 1:
       expected_type = function.arg_types[-1]
-    elif function.arg_types[-1] is None and len(function.arg_types) > 1:
-      expected_type = function.arg_types[-2]
     else:
       assert False, "This code should be unreachable."
 

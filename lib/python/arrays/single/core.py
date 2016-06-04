@@ -29,11 +29,11 @@ def dot(a, b):
 # TODO(rkn): My preferred signature would have been
 # @halo.remote([List[np.ndarray]], [np.ndarray]) but that currently doesn't
 # work because that would expect a list of ndarrays not a list of ObjRefs
-@halo.remote([np.ndarray, None], [np.ndarray])
+@halo.remote([np.ndarray], [np.ndarray])
 def vstack(*xs):
   return np.vstack(xs)
 
-@halo.remote([np.ndarray, None], [np.ndarray])
+@halo.remote([np.ndarray], [np.ndarray])
 def hstack(*xs):
   return np.hstack(xs)
 
@@ -71,7 +71,7 @@ def add(x1, x2):
 def subtract(x1, x2):
   return np.subtract(x1, x2)
 
-@halo.remote([int, np.ndarray, None], [np.ndarray])
+@halo.remote([int, np.ndarray], [np.ndarray])
 def sum(axis, *xs):
   return np.sum(xs, axis=axis)
 
