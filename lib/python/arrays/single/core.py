@@ -26,9 +26,6 @@ def eye(N, M=-1, k=0, dtype_name="float"):
 def dot(a, b):
   return np.dot(a, b)
 
-# TODO(rkn): My preferred signature would have been
-# @halo.remote([List[np.ndarray]], [np.ndarray]) but that currently doesn't
-# work because that would expect a list of ndarrays not a list of ObjRefs
 @halo.remote([np.ndarray], [np.ndarray])
 def vstack(*xs):
   return np.vstack(xs)
@@ -37,7 +34,7 @@ def vstack(*xs):
 def hstack(*xs):
   return np.hstack(xs)
 
-# TODO(rkn): this doesn't parallel the numpy API, but we can't really slice an ObjRef, think about this
+# TODO(rkn): instead of this, consider implementing slicing
 @halo.remote([np.ndarray, List[int], List[int]], [np.ndarray])
 def subarray(a, lower_indices, upper_indices): # TODO(rkn): be consistent about using "index" versus "indices"
   return a[[slice(l, u) for (l, u) in zip(lower_indices, upper_indices)]]

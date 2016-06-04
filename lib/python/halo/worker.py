@@ -3,7 +3,6 @@ import typing
 import funcsigs
 import numpy as np
 import pynumbuf
-import collections
 
 import halo
 import serialization
@@ -119,22 +118,25 @@ def remote(arg_types, return_types, worker=global_worker):
     func_call.arg_types = arg_types
     func_call.return_types = return_types
     func_call.is_remote = True
-    func_call.sig_params = funcsigs.signature(func).parameters
-    func_call.keyword_defaults = [(k, v.default) for k, v in func_call.sig_params.iteritems()]
-    # check if the user specified both varargs and kwargs, which is not supported at the moment
-    if len(func_call.sig_params) > 1:
-      last_param = func_call.sig_params[func_call.sig_params.keys()[-1]]
-      next_to_last_param = func_call.sig_params[func_call.sig_params.keys()[-2]]
-      if last_param.kind == last_param.VAR_KEYWORD and next_to_last_param.kind == next_to_last_param.VAR_POSITIONAL:
-        raise "Specifying both positional and keyword parameters for function {} is not allowed yet!".format(func_call.__name__)
-    # determine if function has vararg parameter
-    func_call.has_vararg_param = False
-    if len(func_call.sig_params) > 0:
-      last_param = func_call.sig_params[next(reversed(func_call.sig_params))]
-      if last_param.kind == last_param.VAR_POSITIONAL:
-        func_call.has_vararg_param = True
+    func_call.sig_params = [(k, v) for k, v in funcsigs.signature(func).parameters.iteritems()]
+    func_call.keyword_defaults = [(k, v.default) for k, v in func_call.sig_params]
+    func_call.has_vararg_param = any([v.kind == v.VAR_POSITIONAL for k, v in func_call.sig_params])
+    func_call.has_kwargs_param = any([v.kind == v.VAR_KEYWORD for k, v in func_call.sig_params])
+    check_signature_supported(func_call)
     return func_call
   return remote_decorator
+
+# helper method, this should not be called by the user
+# we currently do not support the functionality that we test for in this method,
+# but in the future we could
+def check_signature_supported(function):
+  # check if the user specified kwargs
+  if function.has_kwargs_param:
+    raise "Function {} has a **kwargs argument, which is currently not supported.".format(function.__name__)
+  # check if the user specified a variable number of arguments and any keyword arguments
+  if function.has_vararg_param and any([d != funcsigs._empty for k, d in function.keyword_defaults]):
+    raise "Function {} has a *args argument as well as a keyword argument, which is currently not supported.".format(function.__name__)
+
 
 # helper method, this should not be called by the user
 def check_return_values(function, result):
@@ -160,7 +162,7 @@ def check_arguments(function, args):
   for (i, arg) in enumerate(args):
     if i <= len(function.arg_types) - 1:
       expected_type = function.arg_types[i]
-    elif function.has_vararg_param and len(function.arg_types) >= 1:
+    elif function.has_vararg_param:
       expected_type = function.arg_types[-1]
     else:
       assert False, "This code should be unreachable."
