@@ -3,12 +3,12 @@ import argparse
 import numpy as np
 
 import test_functions
-import halo.arrays.remote as ra
-import halo.arrays.distributed as da
+import quartz.arrays.remote as ra
+import quartz.arrays.distributed as da
 
-import halo
-import halo.services as services
-import halo.worker as worker
+import quartz
+import quartz.services as services
+import quartz.worker as worker
 
 parser = argparse.ArgumentParser(description='Parse addresses for the worker to connect to.')
 parser.add_argument("--scheduler-address", default="127.0.0.1:10001", type=str, help="the scheduler's address")
@@ -19,13 +19,13 @@ if __name__ == '__main__':
   args = parser.parse_args()
   worker.connect(args.scheduler_address, args.objstore_address, args.worker_address)
 
-  halo.register_module(test_functions)
-  halo.register_module(ra)
-  halo.register_module(ra.random)
-  halo.register_module(ra.linalg)
-  halo.register_module(da)
-  halo.register_module(da.random)
-  halo.register_module(da.linalg)
-  halo.register_module(sys.modules[__name__])
+  quartz.register_module(test_functions)
+  quartz.register_module(ra)
+  quartz.register_module(ra.random)
+  quartz.register_module(ra.linalg)
+  quartz.register_module(da)
+  quartz.register_module(da.random)
+  quartz.register_module(da.linalg)
+  quartz.register_module(sys.modules[__name__])
 
   worker.main_loop()

@@ -1,5 +1,5 @@
-#ifndef HALO_SCHEDULER_H
-#define HALO_SCHEDULER_H
+#ifndef QUARTZ_SCHEDULER_H
+#define QUARTZ_SCHEDULER_H
 
 
 #include <deque>
@@ -10,8 +10,8 @@
 
 #include <grpc++/grpc++.h>
 
-#include "halo/halo.h"
-#include "halo.grpc.pb.h"
+#include "quartz/quartz.h"
+#include "quartz.grpc.pb.h"
 #include "types.pb.h"
 
 #include "computation_graph.h"

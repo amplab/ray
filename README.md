@@ -1,6 +1,6 @@
-# Halo
+# Quarz
 
-Halo is a distributed execution framework with a Python-like programming model.
+Quartz is a distributed execution framework with a Python-like programming model.
 
 ## Design Decisions
 
@@ -14,6 +14,6 @@ For a description of our design decisions, see
 
 1. sudo apt-get update
 2. sudo apt-get install git
-3. git clone https://github.com/amplab/halo.git
-4. cd halo
+3. git clone https://github.com/amplab/quartz.git
+4. cd quartz
 5. bash setup.sh
