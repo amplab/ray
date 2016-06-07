@@ -1,12 +1,12 @@
 from typing import List
 
 import numpy as np
-import halo.arrays.remote as ra
-import halo
+import quartz.arrays.remote as ra
+import quartz
 
 from core import *
 
-@halo.remote([List[int]], [DistArray])
+@quartz.remote([List[int]], [DistArray])
 def normal(shape):
   num_blocks = DistArray.compute_num_blocks(shape)
   objrefs = np.empty(num_blocks, dtype=object)

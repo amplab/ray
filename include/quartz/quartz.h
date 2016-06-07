@@ -1,5 +1,5 @@
-#ifndef HALO_INCLUDE_HALO_H
-#define HALO_INCLUDE_HALO_H
+#ifndef QUARTZ_INCLUDE_QUARTZ_H
+#define QUARTZ_INCLUDE_QUARTZ_H
 
 #include <vector>
 #include <unordered_map>
@@ -34,20 +34,20 @@ public:
 typedef std::vector<std::vector<ObjStoreId> > ObjTable;
 typedef std::unordered_map<std::string, FnInfo> FnTable;
 
-#define HALO_VERBOSE -1
-#define HALO_INFO 0
-#define HALO_DEBUG 1
-#define HALO_FATAL 2
-#define HALO_REFCOUNT HALO_VERBOSE
-#define HALO_ALIAS HALO_VERBOSE
+#define QUARTZ_VERBOSE -1
+#define QUARTZ_INFO 0
+#define QUARTZ_DEBUG 1
+#define QUARTZ_FATAL 2
+#define QUARTZ_REFCOUNT QUARTZ_VERBOSE
+#define QUARTZ_ALIAS QUARTZ_VERBOSE
 
-#define HALO_LOG(LEVEL, MESSAGE) \
-  if (LEVEL == HALO_VERBOSE) { \
+#define QUARTZ_LOG(LEVEL, MESSAGE) \
+  if (LEVEL == QUARTZ_VERBOSE) { \
     \
-  } else if (LEVEL == HALO_FATAL) { \
+  } else if (LEVEL == QUARTZ_FATAL) { \
     std::cerr << "fatal error occured: " << MESSAGE << std::endl; \
     std::exit(1); \
-  } else if (LEVEL == HALO_DEBUG) { \
+  } else if (LEVEL == QUARTZ_DEBUG) { \
     \
   } else { \
     std::cout << MESSAGE << std::endl; \

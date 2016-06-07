@@ -1,5 +1,5 @@
-#ifndef HALO_WORKER_H
-#define HALO_WORKER_H
+#ifndef QUARTZ_WORKER_H
+#define QUARTZ_WORKER_H
 
 #include <iostream>
 #include <memory>
@@ -15,8 +15,8 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 
-#include "halo.grpc.pb.h"
-#include "halo/halo.h"
+#include "quartz.grpc.pb.h"
+#include "quartz/quartz.h"
 #include "ipc.h"
 
 using grpc::Channel;

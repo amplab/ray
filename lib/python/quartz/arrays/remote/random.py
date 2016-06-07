@@ -1,7 +1,7 @@
 from typing import List
 import numpy as np
-import halo
+import quartz
 
-@halo.remote([List[int]], [np.ndarray])
+@quartz.remote([List[int]], [np.ndarray])
 def normal(shape):
   return np.random.normal(size=shape)

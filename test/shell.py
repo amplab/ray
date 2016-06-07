@@ -1,16 +1,16 @@
 import argparse
 import numpy as np
 
-import halo
-import halo.services as services
-import halo.worker as worker
+import quartz
+import quartz.services as services
+import quartz.worker as worker
 
 import test_functions
-import halo.arrays.remote as ra
-import halo.arrays.distributed as da
+import quartz.arrays.remote as ra
+import quartz.arrays.distributed as da
 
 from grpc.beta import implementations
-import halo_pb2
+import quartz_pb2
 import types_pb2
 
 TIMEOUT_SECONDS = 5
