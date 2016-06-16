@@ -368,7 +368,6 @@ ObjRef SchedulerService::register_new_object() {
     std::vector<ObjRef> objref_vector;
     objref_vector.push_back(objtable_size);
     increment_ref_count(objref_vector); // Note that reference_counts_lock_ is acquired above, as assumed by increment_ref_count
-
   }
   return objtable_size;
 }
