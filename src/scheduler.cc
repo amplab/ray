@@ -365,10 +365,10 @@ ObjRef SchedulerService::register_new_object() {
     // We increment once so the objref doesn't go out of scope before the ObjReady
     // method is called. The corresponding decrement will happen either in
     // ObjReady in the scheduler or in AliasObjRefs in the scheduler.
-    std::lock_guard<std::mutex> reference_counts_lock(reference_counts_lock_); // we grab this lock because increment_ref_count assumes it has been acquired
     std::vector<ObjRef> objref_vector;
     objref_vector.push_back(objtable_size);
-    increment_ref_count(objref_vector);
+    increment_ref_count(objref_vector); // Note that reference_counts_lock_ is acquired above, as assumed by increment_ref_count
+
   }
   return objtable_size;
 }
