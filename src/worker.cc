@@ -285,7 +285,7 @@ void Worker::scheduler_info(ClientContext &context, SchedulerInfoRequest &reques
 // run in a separate thread and potentially utilize multiple threads.
 void Worker::start_worker_service() {
   const char* service_addr = worker_address_.c_str();
-  worker_server_thread_ = std::thread([service_addr]() {
+  worker_server_thread_ = std::thread([this, service_addr]() {
     std::string service_address(service_addr);
     std::string::iterator split_point = split_ip_address(service_address);
     std::string port;
@@ -296,6 +296,15 @@ void Worker::start_worker_service() {
     builder.RegisterService(&service);
     std::unique_ptr<Server> server(builder.BuildAndStart());
     RAY_LOG(RAY_INFO, "worker server listening on " << service_address);
+    worker_ready();
     server->Wait();
   });
+}
+
+void Worker::worker_ready() {
+  ClientContext context;
+  WorkerReadyRequest request;
+  request.set_workerid(workerid_);
+  AckReply reply;
+  scheduler_stub_->WorkerReady(&context, request, &reply);
 }
