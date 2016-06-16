@@ -127,6 +127,17 @@ Status SchedulerService::RegisterWorker(ServerContext* context, const RegisterWo
   return Status::OK;
 }
 
+Status SchedulerService::WorkerReady(ServerContext* context, const WorkerReadyRequest* request, AckReply* reply) {
+  WorkerId workerid = request->workerid();
+  RAY_LOG(RAY_INFO, "worker with workerid " << workerid << " can now receive tasks");
+  {
+    std::lock_guard<std::mutex> lock(avail_workers_lock_);
+    avail_workers_.push_back(workerid);
+  }
+  schedule();
+  return Status::OK;
+}
+
 Status SchedulerService::RegisterFunction(ServerContext* context, const RegisterFunctionRequest* request, AckReply* reply) {
   RAY_LOG(RAY_INFO, "register function " << request->fnname() <<  " from workerid " << request->workerid());
   register_function(request->fnname(), request->workerid(), request->num_return_vals());
@@ -317,9 +328,6 @@ std::pair<WorkerId, ObjStoreId> SchedulerService::register_worker(const std::str
   workers_[workerid].objstoreid = objstoreid;
   workers_[workerid].worker_stub = WorkerService::NewStub(channel);
   workers_lock_.unlock();
-  avail_workers_lock_.lock();
-  avail_workers_.push_back(workerid);
-  avail_workers_lock_.unlock();
   return std::make_pair(workerid, objstoreid);
 }
 

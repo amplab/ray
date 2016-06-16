@@ -71,6 +71,8 @@ class Worker {
   // start the worker server which accepts tasks from the scheduler and stores
   // it in the message queue, which is read by the Python interpreter
   void start_worker_service();
+  // tell the scheduler that this worker is ready to receive tasks
+  void worker_ready();
   // wait for next task from the RPC system
   Task* receive_next_task();
   // tell the scheduler that we are done with the current task and request the

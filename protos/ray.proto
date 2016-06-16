@@ -23,6 +23,8 @@ service Scheduler {
   rpc RegisterObjStore(RegisterObjStoreRequest) returns (RegisterObjStoreReply);
   // Tell the scheduler that a worker can execute a certain function
   rpc RegisterFunction(RegisterFunctionRequest) returns (AckReply);
+  // Once WorkerReady has been called, the scheduler may send tasks to the worker
+  rpc WorkerReady(WorkerReadyRequest) returns (AckReply);
   // Asks the scheduler to execute a task, immediately returns an object reference to the result
   rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskReply);
   // Increment the count of the object reference
@@ -74,6 +76,10 @@ message RegisterFunctionRequest {
   uint64 workerid = 1; // Worker that can execute the function
   string fnname = 2; // Name of the function that is registered
   uint64 num_return_vals = 3; // Number of return values of the function
+}
+
+message WorkerReadyRequest {
+  uint64 workerid = 1; // Worker ID
 }
 
 message SubmitTaskRequest {

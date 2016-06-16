@@ -59,6 +59,7 @@ public:
   Status RegisterObjStore(ServerContext* context, const RegisterObjStoreRequest* request, RegisterObjStoreReply* reply) override;
   Status RegisterWorker(ServerContext* context, const RegisterWorkerRequest* request, RegisterWorkerReply* reply) override;
   Status RegisterFunction(ServerContext* context, const RegisterFunctionRequest* request, AckReply* reply) override;
+  Status WorkerReady(ServerContext* context, const WorkerReadyRequest* request, AckReply* reply) override;
   Status ObjReady(ServerContext* context, const ObjReadyRequest* request, AckReply* reply) override;
   Status NotifyTaskCompleted(ServerContext* context, const NotifyTaskCompletedRequest* request, AckReply* reply) override;
   Status IncrementRefCount(ServerContext* context, const IncrementRefCountRequest* request, AckReply* reply) override;
