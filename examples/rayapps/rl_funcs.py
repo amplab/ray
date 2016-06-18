@@ -43,17 +43,17 @@ def policy_backward(eph, epx, epdlogp, model):
   return {'W1':dW1, 'W2':dW2}
 
 @ray.remote([dict], [tuple])
-def compgrad(model):    
+def compgrad(model):
     observation = env.reset()
     prev_x = None # used in computing the difference frame
     xs,hs,dlogps,drs = [],[],[],[]
     reward_sum = 0
     done = False
     while not done:
-          # preprocess the observation, set input to network to be difference image
+         # preprocess the observation, set input to network to be difference image
          cur_x = prepro(observation)
-  	 x = cur_x - prev_x if prev_x is not None else np.zeros(D)
-  	 prev_x = cur_x
+         x = cur_x - prev_x if prev_x is not None else np.zeros(D)
+         prev_x = cur_x
 
   	 # forward the policy network and sample an action from the returned probability
   	 aprob, h = policy_forward(x,model)
