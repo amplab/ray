@@ -1,7 +1,8 @@
 #define RAY_VERBOSE -1
 #define RAY_INFO 0
 #define RAY_DEBUG 1
-#define RAY_FATAL 2
+#define RAY_WARNING 2
+#define RAY_FATAL 3
 #define RAY_REFCOUNT RAY_VERBOSE
 #define RAY_ALIAS RAY_VERBOSE
 
@@ -13,6 +14,8 @@
     std::exit(1); \
   } else if (LEVEL == RAY_DEBUG) { \
     \
+  } else if (LEVEL == RAY_WARNING) { \
+    std::cout << "WARNING: " << MESSAGE << std::endl; \
   } else { \
     std::cout << MESSAGE << std::endl; \
   }
