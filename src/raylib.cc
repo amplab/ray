@@ -327,7 +327,7 @@ int serialize(PyObject* worker_capsule, PyObject* val, Obj* obj, std::vector<Obj
     return -1;
   }
   if (obj->SpaceUsed() > 1024) {
-    RAY_LOG(RAY_WARNING, "passed an object by value which is larger than 1KB; we recommend pushing the object into and object store and passing by reference instead to avoid large computation graphs!");
+    RAY_LOG(RAY_WARNING, "passed an object by value which is larger than 1KB; we recommend pushing the object into an object store and passing by reference instead to avoid large computation graphs!");
   }
   return 0;
 }
