@@ -251,7 +251,6 @@ int serialize(PyObject* worker_capsule, PyObject* val, Obj* obj, std::vector<Obj
     objrefs.push_back(objref);
   } else if (PyArray_Check(val)) {
     PyArrayObject* array = PyArray_GETCONTIGUOUS((PyArrayObject*) val);
-    Py_XDECREF(val); // PyArray_GETCONTIGUOUS increments the refcount, so we have to decrement it manually (we want to borrow)
     Array* data = obj->mutable_array_data();
     npy_intp size = PyArray_SIZE(array);
     for (int i = 0; i < PyArray_NDIM(array); ++i) {
