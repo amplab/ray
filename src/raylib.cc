@@ -169,7 +169,9 @@ int PyObjectToObjRef(PyObject* object, ObjRef *objref) {
 // Destructors
 
 void ObjCapsule_Destructor(PyObject* capsule) {
+  std::cout << "destroying object" << std::endl;
   Obj* obj = static_cast<Obj*>(PyCapsule_GetPointer(capsule, "obj"));
+  obj->Clear();
   delete obj;
 }
 
