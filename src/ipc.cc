@@ -53,8 +53,11 @@ void MemorySegmentPool::open_segment(SegmentId segmentid, size_t size) {
     segments_[segmentid] = std::make_pair(std::unique_ptr<managed_shared_memory>(new managed_shared_memory(create_only, segment_name.c_str(), new_size)), SegmentStatusType::OPENED);
   } else {
     segments_[segmentid] = std::make_pair(std::unique_ptr<managed_shared_memory>(new managed_shared_memory(open_only, segment_name.c_str())), SegmentStatusType::OPENED);
-    segments_[segmentid].first.release();
   }
+}
+
+void MemorySegmentPool::close(SegmentId segmentid) {
+  segments_[segmentid].first.release();
 }
 
 void MemorySegmentPool::close_segment(SegmentId segmentid) {
