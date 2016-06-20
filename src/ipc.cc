@@ -57,7 +57,7 @@ void MemorySegmentPool::open_segment(SegmentId segmentid, size_t size) {
 }
 
 void MemorySegmentPool::close(SegmentId segmentid) {
-  segments_[segmentid].first.release();
+  segments_[segmentid].first.reset();
 }
 
 void MemorySegmentPool::close_segment(SegmentId segmentid) {
