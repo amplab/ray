@@ -169,7 +169,9 @@ int PyObjectToObjRef(PyObject* object, ObjRef *objref) {
 // Destructors
 
 void ObjCapsule_Destructor(PyObject* capsule) {
+  std::cout << "destroying object" << std::endl;
   Obj* obj = static_cast<Obj*>(PyCapsule_GetPointer(capsule, "obj"));
+  obj->Clear();
   delete obj;
 }
 
@@ -364,7 +366,16 @@ PyObject* deserialize(PyObject* worker_capsule, const Obj& obj, std::vector<ObjR
     PyObject* dict = PyDict_New();
     size_t size = data.elem_size();
     for (size_t i = 0; i < size; ++i) {
-      PyDict_SetItem(dict, deserialize(worker_capsule, data.elem(i).key(), objrefs), deserialize(worker_capsule, data.elem(i).value(), objrefs));
+      PyObject* pykey = deserialize(worker_capsule, data.elem(i).key(), objrefs);
+      PyObject* pyval = deserialize(worker_capsule, data.elem(i).value(), objrefs);
+      PyDict_SetItem(dict, pykey, pyval);
+      // Pass ownership of both the key and the value to the PyDict.
+      // This is only required for PyDicts, not for PyLists or PyTuples, compare
+      // https://docs.python.org/2/c-api/dict.html
+      // https://docs.python.org/2/c-api/list.html
+      // https://docs.python.org/2/c-api/tuple.html
+      Py_XDECREF(pykey);
+      Py_XDECREF(pyval);
     }
     return dict;
   } else if (obj.has_string_data()) {

@@ -119,6 +119,7 @@ void Worker::put_object(ObjRef objref, const Obj* obj, std::vector<ObjRef> &cont
   request.type = ObjRequestType::WORKER_DONE;
   request.metadata_offset = 0;
   request_obj_queue_.send(&request);
+  segmentpool_->close(result.segmentid());
 
   // Notify the scheduler about the objrefs that we are serializing in the objstore.
   AddContainedObjRefsRequest contained_objrefs_request;

@@ -56,6 +56,10 @@ void MemorySegmentPool::open_segment(SegmentId segmentid, size_t size) {
   }
 }
 
+void MemorySegmentPool::close(SegmentId segmentid) {
+  segments_[segmentid].first.reset();
+}
+
 void MemorySegmentPool::close_segment(SegmentId segmentid) {
   RAY_LOG(RAY_DEBUG, "closing segmentid " << segmentid);
   std::string segment_name = get_segment_name(segmentid);

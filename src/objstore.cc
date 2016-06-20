@@ -282,6 +282,7 @@ void ObjStoreService::process_pulls_for_objref(ObjRef objref) {
 
 ObjHandle ObjStoreService::alloc(ObjRef objref, size_t size) {
   segmentpool_lock_.lock();
+  // ObjHandle handle = segmentpool_->allocate(size);
   ObjHandle handle = segmentpool_->allocate(size);
   segmentpool_lock_.unlock();
   std::lock_guard<std::mutex> memory_lock(memory_lock_);
