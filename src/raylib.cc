@@ -250,6 +250,7 @@ int serialize(PyObject* worker_capsule, PyObject* val, Obj* obj, std::vector<Obj
     data->set_data(objref);
     objrefs.push_back(objref);
   } else if (PyArray_Check(val)) {
+    RAY_LOG(RAY_WARNING, "You are trying to pass an array by value; this functionality might get removed in the future!");
     PyArrayObject* array = PyArray_GETCONTIGUOUS((PyArrayObject*) val);
     Array* data = obj->mutable_array_data();
     npy_intp size = PyArray_SIZE(array);
@@ -327,6 +328,9 @@ int serialize(PyObject* worker_capsule, PyObject* val, Obj* obj, std::vector<Obj
   } else {
     PyErr_SetString(RayError, "serialization: type not know");
     return -1;
+  }
+  if (obj->SpaceUsed() > 1024) {
+    RAY_LOG(RAY_WARNING, "passed an object by value which is larger than 1KB; we recommend pushing the object into an object store and passing by reference instead to avoid large computation graphs!");
   }
   return 0;
 }
