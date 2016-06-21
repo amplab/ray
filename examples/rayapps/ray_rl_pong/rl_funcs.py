@@ -44,44 +44,39 @@ def policy_backward(eph, epx, epdlogp, model):
 
 @ray.remote([dict], [tuple])
 def compgrad(model):
-    observation = env.reset()
-    prev_x = None # used in computing the difference frame
-    xs,hs,dlogps,drs = [],[],[],[]
-    reward_sum = 0
-    done = False
-    while not done:
-         # preprocess the observation, set input to network to be difference image
-         cur_x = prepro(observation)
-         x = cur_x - prev_x if prev_x is not None else np.zeros(D)
-         prev_x = cur_x
+  observation = env.reset()
+  prev_x = None # used in computing the difference frame
+  xs,hs,dlogps,drs = [],[],[],[]
+  reward_sum = 0
+  done = False
+  while not done:
+    cur_x = prepro(observation)
+    x = cur_x - prev_x if prev_x is not None else np.zeros(D)
+    prev_x = cur_x
+    
+    aprob, h = policy_forward(x,model)
+    action = 2 if np.random.uniform() < aprob else 3 # roll the dice!
 
-  	 # forward the policy network and sample an action from the returned probability
-  	 aprob, h = policy_forward(x,model)
-  	 action = 2 if np.random.uniform() < aprob else 3 # roll the dice!
+    xs.append(x) # observation
+    hs.append(h) # hidden state
+    y = 1 if action == 2 else 0 # a "fake label"
+    dlogps.append(y - aprob) # grad that encourages the action that was taken to be taken (see http://cs231n.github.io/neural-networks-2/#losses if confused)
 
-  	 # record various intermediates (needed later for backprop)
-  	 xs.append(x) # observation
-  	 hs.append(h) # hidden state
-  	 y = 1 if action == 2 else 0 # a "fake label"
-  	 dlogps.append(y - aprob) # grad that encourages the action that was taken to be taken (see http://cs231n.github.io/neural-networks-2/#losses if confused)
+    observation, reward, done, info = env.step(action)
+    reward_sum += reward
 
-  	 # step the environment and get new measurements
-  	 observation, reward, done, info = env.step(action)
-  	 reward_sum += reward
+    drs.append(reward) # record reward (has to be done after we call step() to get reward for previous action)
 
-  	 drs.append(reward) # record reward (has to be done after we call step() to get reward for previous action)
+  epx = np.vstack(xs)
+  eph = np.vstack(hs)
+  epdlogp = np.vstack(dlogps)
+  epr = np.vstack(drs)
+  xs,hs,dlogps,drs = [],[],[],[] # reset array memory
 
-    epx = np.vstack(xs)
-    eph = np.vstack(hs)
-    epdlogp = np.vstack(dlogps)
-    epr = np.vstack(drs)
-    xs,hs,dlogps,drs = [],[],[],[] # reset array memory
-
-    # compute the discounted reward backwards through time
-    discounted_epr = discount_rewards(epr)
-    # standardize the rewards to be unit normal (helps control the gradient estimator variance)
-    discounted_epr -= np.mean(discounted_epr)
-    discounted_epr /= np.std(discounted_epr)
-
-    epdlogp *= discounted_epr # modulate the gradient with advantage (PG magic happens right here.)
-    return (policy_backward(eph, epx, epdlogp, model), reward_sum)
+  # compute the discounted reward backwards through time
+  discounted_epr = discount_rewards(epr)
+  # standardize the rewards to be unit normal (helps control the gradient estimator variance)
+  discounted_epr -= np.mean(discounted_epr)
+  discounted_epr /= np.std(discounted_epr)
+  epdlogp *= discounted_epr # modulate the gradient with advantage (PG magic happens right here.)
+  return (policy_backward(eph, epx, epdlogp, model), reward_sum)

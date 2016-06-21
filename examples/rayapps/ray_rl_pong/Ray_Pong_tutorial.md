@@ -83,24 +83,124 @@ This `register_module` is why all of the functions need to be in a seperate file
   worker.main_loop()
 ```
 ##Main File
-Aside from three areas, the code in this file is essentially the remnants of the original code, such as the setup for the model, summing the gradients, and updating the model. The first addition is setting the cluster up:
 ```python
-worker_path = "/home/ubuntu/ray/examples/rayapps/rl_worker.py"
+import numpy as np
+import cPickle as pickle
+import gym
+import ray
+import ray.services as services
+import rl_funcs
+import os
+
+worker_dir = os.path.dirname(os.path.abspath(__file__))
+worker_path = os.path.join(worker_dir, "rl_worker.py")
+services.start_singlenode_cluster(return_drivers=False, num_objstores=1, num_workers_per_objstore=10, worker_path=worker_path)
+
+# hyperparameters
+H = 200 # number of hidden layer neurons
+batch_size = 10 # every how many episodes to do a param update?
+learning_rate = 1e-4
+decay_rate = 0.99 # decay factor for RMSProp leaky sum of grad^2
+resume = False # resume from previous checkpoint?
+
+running_reward = None
+batch_num = 1
+D = 80 * 80 # input dimensionality: 80x80 grid
+if resume:
+  model = pickle.load(open('save.p', 'rb'))
+else:
+  model = {}
+  model['W1'] = np.random.randn(H,D) / np.sqrt(D) # "Xavier" initialization
+  model['W2'] = np.random.randn(H) / np.sqrt(H)
+grad_buffer = { k : np.zeros_like(v) for k,v in model.iteritems() } # update buffers that add up gradients over a batch
+rmsprop_cache = { k : np.zeros_like(v) for k,v in model.iteritems() } # rmsprop memory
+while True:
+  modelref = ray.push(model)
+  grads = []
+  for i in range(batch_size):
+    grads.append(rl_funcs.compgrad(modelref))
+  for i in range(batch_size):
+    grad = ray.pull(grads[i])
+    for k in model: grad_buffer[k] += grad[0][k] # accumulate grad over batch
+      running_reward = grad[1] if running_reward is None else running_reward * 0.99 + grad[1] * 0.01
+      print 'Batch %d. episode reward total was %f. running mean: %f' % (batch_num, grad[1], running_reward)
+  for k,v in model.iteritems():
+    g = grad_buffer[k] # gradient
+    rmsprop_cache[k] = decay_rate * rmsprop_cache[k] + (1 - decay_rate) * g**2
+    model[k] += learning_rate * g / (np.sqrt(rmsprop_cache[k]) + 1e-5)
+    grad_buffer[k] = np.zeros_like(v) # reset batch gradient buffer
+  batch_num += 1
+  if batch_num % 10 == 0: pickle.dump(model, open('save.p', 'wb'))
+```
+The code in this file is essentially the remnants of the original code, such as the setup for the model, summing the gradients, and updating the model. Beginning after the import statements, the file begins by finding where the file, in this case "rl_worker.py", that you want to initialize your workers with is:
+```python
+worker_dir = os.path.dirname(os.path.abspath(__file__))
+worker_path = os.path.join(worker_dir, "rl_worker.py")
+```
+and then uses the path to start a Ray cluster in order to parallelize functions:
+```python
 services.start_singlenode_cluster(return_drivers=False, num_objstores=1, num_workers_per_objstore=10, worker_path=worker_path)
 ```
-test_path simply points to the file you want your workers to be initialized with, and `start_singlenode_cluster` takes in how many object stores you want, how many workers to share the same object store, and the previously mentioned worker path. You should ideally have only one object store per machine to avoid unnecessary copies between object stores.  
-The next area is sending the model to the object store:
+`start_singlenode_cluster` takes in how many object stores you want, how many workers to share the same object store, and the previously mentioned worker path. You should ideally have only one object store per machine to avoid unnecessary copies between object stores.  
+```python
+H = 200 # number of hidden layer neurons
+batch_size = 10 # every how many episodes to do a param update?
+learning_rate = 1e-4
+decay_rate = 0.99 # decay factor for RMSProp leaky sum of grad^2
+resume = False # resume from previous checkpoint?
+```
+This section simply initializes the various hyperparameters we use, and resume dictates if we waqnt to continue from a previous experiment.
+```python
+running_reward = None
+batch_num = 1
+D = 80 * 80 # input dimensionality: 80x80 grid
+```
+Running_reward is used to measure the aggregate performance of the experiment, and batch_num simply counts which round it is. `D` is just used to initialize the model.
+```python
+if resume:
+  model = pickle.load(open('save.p', 'rb'))
+else:
+  model = {}
+  model['W1'] = np.random.randn(H,D) / np.sqrt(D) # "Xavier" initialization
+  model['W2'] = np.random.randn(H) / np.sqrt(H)
+```
+If `resume` is set, then we simply load the model and continue the same run. Otherwise, we initialize the model as a dictionary with 'W1' being the weights for the first layer and 'W2' the weights for the second layer.
+```python
+grad_buffer = { k : np.zeros_like(v) for k,v in model.iteritems() } # update buffers that add up gradients over a batch
+rmsprop_cache = { k : np.zeros_like(v) for k,v in model.iteritems() } # rmsprop memory
+```
+These are used for updating the weights of the model: grad_buffer for storing the total result of the gradient over the entire batch, and rmsprop_cache for storing the running average of the gradients thus far.
+The next area is the main infinite loop, and the loop starts by sending the model to the object store:
 ```python
  modelref = ray.push(model)
 ```
 Although we can directly pass the model into `compgrad` as it is a dictionary, it takes up less memory to place it in the object store using `ray.push`. As the scheduler has to pass the arguments by value contrary to normal Python behavior, if you are passing large objects, in this case a 200x6400 numpy array, you will take up a large chunk of memory as the scheduler has to send a copy to each worker. If the object is in the objstore, each worker already has access to it, and thus there are no problems. Now `ray.push` returns a ray.ObjRef, which is a reference to the object in objstore, for use in passing to functions, as shown in the next area.  
 ```python
+  grads = []
   for i in range(batch_size):
-      grads.append(rl_funcs.compgrad(modelref))
+    grads.append(rl_funcs.compgrad(modelref))
+```
+`grads` is used to simplify the process of retrieving the results of the various gradient computations. Without a list, we would need to have batch_size different variables. `Batch_size` is simply the number of games before a model update, in this case 10. When we call the ray.remote function `compgrad`, it returns an ObjRef that we then have to pull out so we append the function to `grads`. One thing to note is that although in the `@ray.remote` tag we stipulated that the argument type was a `dict`, we are actually passing an ObjRef. This is because Ray is smart enough to attach the original type to the ObjRef for type checking and to automatically pull the argument in the function body. 
+```python
   for i in range(batch_size):
-      grad = ray.pull(grads[i])
-      for k in model: grad_buffer[k] += grad[0][k] # accumulate grad over batch
+    grad = ray.pull(grads[i])
+    for k in model: grad_buffer[k] += grad[0][k] # accumulate grad over batch
+    running_reward = grad[1] if running_reward is None else running_reward * 0.99 + grad[1] * 0.01
+    print 'Batch %d. episode reward total was %f. running mean: %f' % (batch_num, grad[1], running_reward)
 ```  
-Batch_size is simply the number of games before a model update, in this case 10. When we call the ray.remote function `compgrad`, it returns an ObjRef that we then have to pull out. For simplicity, we put the ObjRefs in a list. One thing to note is that although in the `@ray.remote` tag we stipulated that the argument type was a `dict`, we are actually passing an ObjRef. This is because Ray is smart enough to attach the original type to the ObjRef for type checking and to automatically pull the argument in the function body. After we pull the gradient, we then place it in the gradient buffer. Once we have completed this loop, we update the model and then loop again. This completes the entire task.
+After the function eventually returns and we pull the gradient from the object store, we then add it in the gradient buffer. As mentioned before, the reward_sum returned with the function is added to running_reward with the above formula, and then printed along with the batch number and the performance of the game itself.
+```python
+ for k,v in model.iteritems():
+    g = grad_buffer[k] # gradient
+    rmsprop_cache[k] = decay_rate * rmsprop_cache[k] + (1 - decay_rate) * g**2
+    model[k] += learning_rate * g / (np.sqrt(rmsprop_cache[k]) + 1e-5)
+    grad_buffer[k] = np.zeros_like(v) # reset batch gradient buffer
+```
+This is where we actually update the model. As mentioned before, rmsprop_cache is the running average of the gradients squared, which is then used in the update to dampen the update. After that, we simply reset the gradient buffer.
+```python
+batch_num += 1
+if batch_num % 10 == 0: pickle.dump(model, open('save.p', 'wb'))
+```
+At the end of the loop. we simply increment the batch number and every ten batches we save the model to a file.
 ##Takeaways
 If you have a task you want to execute in parallel, you simply have to include `@ray.remote([input args], [output args])` before the function head in a seperate file. To put objects in common space for use by workers, use `ray.push`, and to retrieve objects such as the result of ray.remote functions, use `ray.pull`. Finally to setup the task, you need a worker file that has the ip addresses of the scheduler, objstore, and worker, registers every function file you want the worker to have, and starts the worker. After that, simply start a cluster with `start_singlenode_cluster` passing in the number of objstores (machines), how many workers per objstore (machine), and the file you want to initialize the workers with. Put this before the main body of your script, and you are good to go.   
