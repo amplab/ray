@@ -748,7 +748,10 @@ PyObject* get_object(PyObject* self, PyObject* args) {
   slice s = worker->get_object(objref);
   Obj* obj = new Obj(); // TODO: Make sure this will get deleted
   obj->ParseFromString(std::string(reinterpret_cast<char*>(s.data), s.len));
-  return PyCapsule_New(static_cast<void*>(obj), "obj", &ObjCapsule_Destructor);
+  PyObject* result = PyList_New(2);
+  PyList_SetItem(result, 0, PyCapsule_New(static_cast<void*>(obj), "obj", &ObjCapsule_Destructor));
+  PyList_SetItem(result, 1, PyInt_FromLong(s.segmentid));
+  return result;
 }
 
 PyObject* request_object(PyObject* self, PyObject* args) {
