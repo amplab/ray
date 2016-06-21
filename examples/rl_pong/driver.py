@@ -1,13 +1,14 @@
+"Adpated from Andrej Karpathy's code on reinforcement learning on Pong"
 import numpy as np
 import cPickle as pickle
 import gym
 import ray
 import ray.services as services
-import rl_funcs
+import functions
 import os
 
 worker_dir = os.path.dirname(os.path.abspath(__file__))
-worker_path = os.path.join(worker_dir, "rl_worker.py")
+worker_path = os.path.join(worker_dir, "worker.py")
 services.start_singlenode_cluster(return_drivers=False, num_objstores=1, num_workers_per_objstore=10, worker_path=worker_path)
 
 # hyperparameters
