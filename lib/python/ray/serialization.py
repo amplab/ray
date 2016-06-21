@@ -1,6 +1,34 @@
 import importlib
+import numpy as np
 
 import ray
+
+# The following definitions are required, because Python doesn't allow custom
+# attributes for primitive types; we need custom attributes both for
+# implementing destructors that close the shared memory segment the object
+# resided in and also the remote object reference (so that
+# https://github.com/amplab/ray/issues/72 can be fixed)
+
+class Int(int):
+  pass
+
+class Float(float):
+  pass
+
+class List(list):
+  pass
+
+class Dict(dict):
+  pass
+
+class Tuple(tuple):
+  pass
+
+class Str(str):
+  pass
+
+class NDArray(np.ndarray):
+  pass
 
 def to_primitive(obj):
   if hasattr(obj, "serialize"):
