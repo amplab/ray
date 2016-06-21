@@ -199,6 +199,14 @@ bool Worker::is_arrow(ObjRef objref) {
   return result.metadata_offset() != 0;
 }
 
+void Worker::unmap_object(ObjRef objref) {
+  if (!connected_) {
+    RAY_LOG(RAY_DEBUG, "Attempted to perform unmap_object but failed.");
+    return;
+  }
+  segmentpool_->unmap_segment(objref);
+}
+
 void Worker::alias_objrefs(ObjRef alias_objref, ObjRef target_objref) {
   RAY_CHECK(connected_, "Attempted to perform alias_objrefs but failed.");
   ClientContext context;

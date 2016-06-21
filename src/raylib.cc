@@ -527,6 +527,16 @@ PyObject* is_arrow(PyObject* self, PyObject* args) {
     Py_RETURN_FALSE;
 }
 
+PyObject* unmap_object(PyObject* self, PyObject* args) {
+  Worker* worker;
+  int segmentid;
+  if (!PyArg_ParseTuple(args, "O&i", &PyObjectToWorker, &worker, &segmentid)) {
+    return NULL;
+  }
+  worker->unmap_object(segmentid);
+  Py_RETURN_NONE;
+}
+
 PyObject* deserialize_object(PyObject* self, PyObject* args) {
   PyObject* worker_capsule;
   Obj* obj;
@@ -851,6 +861,7 @@ static PyMethodDef RayLibMethods[] = {
  { "put_arrow", put_arrow, METH_VARARGS, "put an arrow array on the local object store"},
  { "get_arrow", get_arrow, METH_VARARGS, "get an arrow array from the local object store"},
  { "is_arrow", is_arrow, METH_VARARGS, "is the object in the local object store an arrow object?"},
+ { "unmap_object", unmap_object, METH_VARARGS, "unmap the object from the client's shared memory pool"},
  { "serialize_task", serialize_task, METH_VARARGS, "serialize a task to protocol buffers" },
  { "deserialize_task", deserialize_task, METH_VARARGS, "deserialize a task from protocol buffers" },
  { "create_worker", create_worker, METH_VARARGS, "connect to the scheduler and the object store" },

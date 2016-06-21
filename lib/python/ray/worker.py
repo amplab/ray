@@ -17,8 +17,7 @@ class RayDealloc(object):
     self.segmentid = segmentid
 
   def __del__(self):
-    # TODO(pcm): This will be used to free the segment
-    pass
+    ray.lib.unmap_object(self.handle, self.segmentid)
 
 class Worker(object):
   """The methods in this class are considered unexposed to the user. The functions outside of this class are considered exposed."""
