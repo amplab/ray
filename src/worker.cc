@@ -93,6 +93,7 @@ slice Worker::get_object(ObjRef objref) {
   slice slice;
   slice.data = segmentpool_->get_address(result);
   slice.len = result.size();
+  slice.segmentid = result.segmentid();
   return slice;
 }
 
@@ -165,7 +166,9 @@ PyObject* Worker::put_arrow(ObjRef objref, PyObject* value) {
   Py_RETURN_NONE;
 }
 
-PyObject* Worker::get_arrow(ObjRef objref) {
+// returns python list containing the value represented by objref and the
+// segmentid in which the object is stored
+PyObject* Worker::get_arrow(ObjRef objref, SegmentId& segmentid) {
   RAY_CHECK(connected_, "Attempted to perform get_arrow but failed.");
   ObjRequest request;
   request.workerid = workerid_;
@@ -176,6 +179,7 @@ PyObject* Worker::get_arrow(ObjRef objref) {
   receive_obj_queue_.receive(&result);
   uint8_t* address = segmentpool_->get_address(result);
   auto source = std::make_shared<BufferMemorySource>(address, result.size());
+  segmentid = result.segmentid();
   PyObject* value;
   CHECK_ARROW_STATUS(pynumbuf::ReadPythonObjectFrom(source.get(), result.metadata_offset(), &value), "error during ReadPythonObjectFrom: ");
   return value;
@@ -257,12 +261,13 @@ Task* Worker::receive_next_task() {
 void Worker::notify_task_completed(bool task_succeeded, std::string error_message) {
   RAY_CHECK(connected_, "Attempted to perform notify_task_completed but failed.");
   ClientContext context;
-  NotifyTaskCompletedRequest request;
+  ReadyForNewTaskRequest request;
   request.set_workerid(workerid_);
-  request.set_task_succeeded(task_succeeded);
-  request.set_error_message(error_message);
+  ReadyForNewTaskRequest::PreviousTaskInfo* previous_task_info = request.mutable_previous_task_info();
+  previous_task_info->set_task_succeeded(task_succeeded);
+  previous_task_info->set_error_message(error_message);
   AckReply reply;
-  scheduler_stub_->NotifyTaskCompleted(&context, request, &reply);
+  scheduler_stub_->ReadyForNewTask(&context, request, &reply);
 }
 
 void Worker::disconnect() {
@@ -279,13 +284,18 @@ void Worker::scheduler_info(ClientContext &context, SchedulerInfoRequest &reques
   scheduler_stub_->SchedulerInfo(&context, request, &reply);
 }
 
+void Worker::task_info(ClientContext &context, TaskInfoRequest &request, TaskInfoReply &reply) {
+  RAY_CHECK(connected_, "Attempted to get worker info but failed.");
+  scheduler_stub_->TaskInfo(&context, request, &reply);
+}
+
 // Communication between the WorkerServer and the Worker happens via a message
 // queue. This is because the Python interpreter needs to be single threaded
 // (in our case running in the main thread), whereas the WorkerService will
 // run in a separate thread and potentially utilize multiple threads.
 void Worker::start_worker_service() {
   const char* service_addr = worker_address_.c_str();
-  worker_server_thread_ = std::thread([service_addr]() {
+  worker_server_thread_ = std::thread([this, service_addr]() {
     std::string service_address(service_addr);
     std::string::iterator split_point = split_ip_address(service_address);
     std::string port;
@@ -296,6 +306,13 @@ void Worker::start_worker_service() {
     builder.RegisterService(&service);
     std::unique_ptr<Server> server(builder.BuildAndStart());
     RAY_LOG(RAY_INFO, "worker server listening on " << service_address);
+
+    ClientContext context;
+    ReadyForNewTaskRequest request;
+    request.set_workerid(workerid_);
+    AckReply reply;
+    scheduler_stub_->ReadyForNewTask(&context, request, &reply);
+
     server->Wait();
   });
 }

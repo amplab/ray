@@ -11,6 +11,9 @@
 
 #include "types.pb.h"
 #include "worker.h"
+#include "utils.h"
+
+RayConfig global_ray_config;
 
 extern "C" {
 
@@ -178,6 +181,20 @@ void WorkerCapsule_Destructor(PyObject* capsule) {
 void TaskCapsule_Destructor(PyObject* capsule) {
   Task* obj = static_cast<Task*>(PyCapsule_GetPointer(capsule, "task"));
   delete obj;
+}
+
+// Helper methods
+
+// Pass ownership of both the key and the value to the PyDict.
+// This is only required for PyDicts, not for PyLists or PyTuples, compare
+// https://docs.python.org/2/c-api/dict.html
+// https://docs.python.org/2/c-api/list.html
+// https://docs.python.org/2/c-api/tuple.html
+
+void set_dict_item_and_transfer_ownership(PyObject* dict, PyObject* key, PyObject* val) {
+  PyDict_SetItem(dict, key, val);
+  Py_XDECREF(key);
+  Py_XDECREF(val);
 }
 
 // Serialization
@@ -361,7 +378,9 @@ PyObject* deserialize(PyObject* worker_capsule, const Obj& obj, std::vector<ObjR
     PyObject* dict = PyDict_New();
     size_t size = data.elem_size();
     for (size_t i = 0; i < size; ++i) {
-      PyDict_SetItem(dict, deserialize(worker_capsule, data.elem(i).key(), objrefs), deserialize(worker_capsule, data.elem(i).value(), objrefs));
+      PyObject* pykey = deserialize(worker_capsule, data.elem(i).key(), objrefs);
+      PyObject* pyval = deserialize(worker_capsule, data.elem(i).value(), objrefs);
+      set_dict_item_and_transfer_ownership(dict, pykey, pyval);
     }
     return dict;
   } else if (obj.has_string_data()) {
@@ -493,7 +512,12 @@ PyObject* get_arrow(PyObject* self, PyObject* args) {
   if (!PyArg_ParseTuple(args, "O&O&", &PyObjectToWorker, &worker, &PyObjectToObjRef, &objref)) {
     return NULL;
   }
-  return (PyObject*) worker->get_arrow(objref);
+  SegmentId segmentid;
+  PyObject* value = worker->get_arrow(objref, segmentid);
+  PyObject* val_and_segmentid = PyList_New(2);
+  PyList_SetItem(val_and_segmentid, 0, value);
+  PyList_SetItem(val_and_segmentid, 1, PyInt_FromLong(segmentid));
+  return val_and_segmentid;
 }
 
 PyObject* is_arrow(PyObject* self, PyObject* args) {
@@ -729,7 +753,10 @@ PyObject* get_object(PyObject* self, PyObject* args) {
   slice s = worker->get_object(objref);
   Obj* obj = new Obj(); // TODO: Make sure this will get deleted
   obj->ParseFromString(std::string(reinterpret_cast<char*>(s.data), s.len));
-  return PyCapsule_New(static_cast<void*>(obj), "obj", &ObjCapsule_Destructor);
+  PyObject* result = PyList_New(2);
+  PyList_SetItem(result, 0, PyCapsule_New(static_cast<void*>(obj), "obj", &ObjCapsule_Destructor));
+  PyList_SetItem(result, 1, PyInt_FromLong(s.segmentid));
+  return result;
 }
 
 PyObject* request_object(PyObject* self, PyObject* args) {
@@ -782,9 +809,58 @@ PyObject* scheduler_info(PyObject* self, PyObject* args) {
   }
 
   PyObject* dict = PyDict_New();
-  PyDict_SetItem(dict, PyString_FromString("target_objrefs"), target_objref_list);
-  PyDict_SetItem(dict, PyString_FromString("reference_counts"), reference_count_list);
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("target_objrefs"), target_objref_list);
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("reference_counts"), reference_count_list);
   return dict;
+}
+
+PyObject* task_info(PyObject* self, PyObject* args) {
+  Worker* worker;
+  if (!PyArg_ParseTuple(args, "O&", &PyObjectToWorker, &worker)) {
+    return NULL;
+  }
+  ClientContext context;
+  TaskInfoRequest request;
+  TaskInfoReply reply;
+  worker->task_info(context, request, reply);
+
+  PyObject* failed_tasks_list = PyList_New(reply.failed_task_size());
+  for (size_t i = 0; i < reply.failed_task_size(); ++i) {
+    const TaskStatus& info = reply.failed_task(i);
+    PyObject* info_dict = PyDict_New();
+    set_dict_item_and_transfer_ownership(info_dict, PyString_FromString("worker_address"), PyString_FromStringAndSize(info.worker_address().data(), info.worker_address().size()));
+    set_dict_item_and_transfer_ownership(info_dict, PyString_FromString("function_name"), PyString_FromStringAndSize(info.function_name().data(), info.function_name().size()));
+    set_dict_item_and_transfer_ownership(info_dict, PyString_FromString("operationid"), PyInt_FromLong(info.operationid()));
+    set_dict_item_and_transfer_ownership(info_dict, PyString_FromString("error_message"), PyString_FromStringAndSize(info.error_message().data(), info.error_message().size()));
+    PyList_SetItem(failed_tasks_list, i, info_dict);
+  }
+
+  PyObject* running_tasks_list = PyList_New(reply.running_task_size());
+  for (size_t i = 0; i < reply.running_task_size(); ++i) {
+    const TaskStatus& info = reply.running_task(i);
+    PyObject* info_dict = PyDict_New();
+    set_dict_item_and_transfer_ownership(info_dict, PyString_FromString("worker_address"), PyString_FromStringAndSize(info.worker_address().data(), info.worker_address().size()));
+    set_dict_item_and_transfer_ownership(info_dict, PyString_FromString("function_name"), PyString_FromStringAndSize(info.function_name().data(), info.function_name().size()));
+    set_dict_item_and_transfer_ownership(info_dict, PyString_FromString("operationid"), PyInt_FromLong(info.operationid()));
+    PyList_SetItem(running_tasks_list, i, info_dict);
+  }
+
+  PyObject* dict = PyDict_New();
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("failed_tasks"), failed_tasks_list);
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("running_tasks"), running_tasks_list);
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("num_succeeded"), PyInt_FromLong(reply.num_succeeded()));
+  return dict;
+}
+
+PyObject* set_log_config(PyObject* self, PyObject* args) {
+  const char* log_file_name;
+  if (!PyArg_ParseTuple(args, "s", &log_file_name)) {
+    return NULL;
+  }
+  create_log_dir_or_die(log_file_name);
+  global_ray_config.log_to_file = true;
+  global_ray_config.logfile.open(log_file_name);
+  Py_RETURN_NONE;
 }
 
 static PyMethodDef RayLibMethods[] = {
@@ -809,6 +885,8 @@ static PyMethodDef RayLibMethods[] = {
  { "notify_task_completed", notify_task_completed, METH_VARARGS, "notify the scheduler that a task has been completed" },
  { "start_worker_service", start_worker_service, METH_VARARGS, "start the worker service" },
  { "scheduler_info", scheduler_info, METH_VARARGS, "get info about scheduler state" },
+ { "task_info", task_info, METH_VARARGS, "get task statuses" },
+ { "set_log_config", set_log_config, METH_VARARGS, "set filename for raylib logging" },
  { NULL, NULL, 0, NULL }
 };
 

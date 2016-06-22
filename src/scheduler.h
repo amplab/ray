@@ -35,6 +35,8 @@ struct WorkerHandle {
   std::shared_ptr<Channel> channel;
   std::unique_ptr<WorkerService::Stub> worker_stub;
   ObjStoreId objstoreid;
+  std::string worker_address;
+  OperationId current_task;
 };
 
 struct ObjStoreHandle {
@@ -60,13 +62,18 @@ public:
   Status RegisterWorker(ServerContext* context, const RegisterWorkerRequest* request, RegisterWorkerReply* reply) override;
   Status RegisterFunction(ServerContext* context, const RegisterFunctionRequest* request, AckReply* reply) override;
   Status ObjReady(ServerContext* context, const ObjReadyRequest* request, AckReply* reply) override;
-  Status NotifyTaskCompleted(ServerContext* context, const NotifyTaskCompletedRequest* request, AckReply* reply) override;
+  Status ReadyForNewTask(ServerContext* context, const ReadyForNewTaskRequest* request, AckReply* reply) override;
   Status IncrementRefCount(ServerContext* context, const IncrementRefCountRequest* request, AckReply* reply) override;
   Status DecrementRefCount(ServerContext* context, const DecrementRefCountRequest* request, AckReply* reply) override;
   Status AddContainedObjRefs(ServerContext* context, const AddContainedObjRefsRequest* request, AckReply* reply) override;
   Status SchedulerInfo(ServerContext* context, const SchedulerInfoRequest* request, SchedulerInfoReply* reply) override;
+  Status TaskInfo(ServerContext* context, const TaskInfoRequest* request, TaskInfoReply* reply) override;
 
-  // ask an object store to send object to another objectstore
+  // This will ask an object store to send an object to another object store if
+  // the object is not already present in that object store and is not already
+  // being transmitted.
+  void deliver_object_if_necessary(ObjRef objref, ObjStoreId from, ObjStoreId to);
+  // ask an object store to send object to another object store
   void deliver_object(ObjRef objref, ObjStoreId from, ObjStoreId to);
   // assign a task to a worker
   void schedule();
@@ -89,7 +96,7 @@ public:
   // get information about the scheduler state
   void get_info(const SchedulerInfoRequest& request, SchedulerInfoReply* reply);
 private:
-  // pick an objectstore that holds a given object (needs protection by objtable_lock_)
+  // pick an objectstore that holds a given object (needs protection by objects_lock_)
   ObjStoreId pick_objstore(ObjRef objref);
   // checks if objref is a canonical objref
   bool is_canonical(ObjRef objref);
@@ -110,13 +117,19 @@ private:
   // tell all of the objstores holding canonical_objref to deallocate it
   void deallocate_object(ObjRef canonical_objref);
   // increment the ref counts for the object references in objrefs
-  void increment_ref_count(std::vector<ObjRef> &objrefs);
+  void increment_ref_count(const std::vector<ObjRef> &objrefs);
   // decrement the ref counts for the object references in objrefs
-  void decrement_ref_count(std::vector<ObjRef> &objrefs);
+  void decrement_ref_count(const std::vector<ObjRef> &objrefs);
   // Find all of the object references which are upstream of objref (including objref itself). That is, you can get from everything in objrefs to objref by repeatedly indexing in target_objrefs_.
   void upstream_objrefs(ObjRef objref, std::vector<ObjRef> &objrefs);
   // Find all of the object references that refer to the same object as objref (as best as we can determine at the moment). The information may be incomplete because not all of the aliases may be known.
   void get_equivalent_objrefs(ObjRef objref, std::vector<ObjRef> &equivalent_objrefs);
+  // acquires all locks, this should only be used by get_info and for fault tolerance
+  void acquire_all_locks();
+  // release all locks, this should only be used by get_info and for fault tolerance
+  void release_all_locks();
+  // acquire or release all the locks. This is a single method to ensure a single canonical ordering of the locks.
+  void do_on_locks(bool lock);
 
   // The computation graph tracks the operations that have been submitted to the
   // scheduler and is mostly used for fault tolerance.
@@ -145,7 +158,16 @@ private:
   std::mutex reverse_target_objrefs_lock_;
   // Mapping from canonical objref to list of object stores where the object is stored. Non-canonical (aliased) objrefs should not be used to index objtable_.
   ObjTable objtable_;
-  std::mutex objtable_lock_;
+  std::mutex objects_lock_; // This lock protects objtable_ and objects_in_transit_
+  // For each object store objstoreid, objects_in_transit_[objstoreid] is a
+  // vector of the canonical object references that are being streamed to that
+  // object store but are not yet present. Object references are added to this
+  // in deliver_object_if_necessary (to ensure that we do not attempt to deliver
+  // the same object to a given object store twice), and object references are
+  // removed when add_location is called (from ObjReady), and they are moved to
+  // the objtable_. Note that objects_in_transit_ and objtable_ share the same
+  // lock (objects_lock_).
+  std::vector<std::vector<ObjRef> > objects_in_transit_;
   // Hash map from function names to workers where the function is registered.
   FnTable fntable_;
   std::mutex fntable_lock_;
@@ -155,6 +177,12 @@ private:
   // List of pending pull calls.
   std::vector<std::pair<WorkerId, ObjRef> > pull_queue_;
   std::mutex pull_queue_lock_;
+  // List of failed tasks
+  std::vector<TaskStatus> failed_tasks_;
+  std::mutex failed_tasks_lock_;
+  // List of the IDs of successful tasks
+  std::vector<OperationId> successful_tasks_; // Right now, we only use this information in the TaskInfo call.
+  std::mutex successful_tasks_lock_;
   // List of pending alias notifications. Each element consists of (objstoreid, (alias_objref, canonical_objref)).
   std::vector<std::pair<ObjStoreId, std::pair<ObjRef, ObjRef> > > alias_notification_queue_;
   std::mutex alias_notification_queue_lock_;

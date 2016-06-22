@@ -1,11 +1,25 @@
+import datetime
+import logging
+import os
 from types import ModuleType
 import typing
 import funcsigs
 import numpy as np
 import pynumbuf
+import colorama
 
 import ray
+from ray.config import LOG_DIRECTORY, LOG_TIMESTAMP
 import serialization
+
+class RayDealloc(object):
+  def __init__(self, handle, segmentid):
+    self.handle = handle
+    self.segmentid = segmentid
+
+  def __del__(self):
+    # TODO(pcm): This will be used to free the segment
+    pass
 
 class Worker(object):
   """The methods in this class are considered unexposed to the user. The functions outside of this class are considered exposed."""
@@ -13,6 +27,10 @@ class Worker(object):
   def __init__(self):
     self.functions = {}
     self.handle = None
+
+  def set_print_task_info(self, print_task_info):
+    self.print_task_info = print_task_info
+    colorama.init()
 
   def put_object(self, objref, value):
     """Put `value` in the local object store with objref `objref`. This assumes that the value for `objref` has not yet been placed in the local object store."""
@@ -30,10 +48,33 @@ class Worker(object):
     WARNING: get_object can only be called on a canonical objref.
     """
     if ray.lib.is_arrow(self.handle, objref):
-      return ray.lib.get_arrow(self.handle, objref)
+      result, segmentid = ray.lib.get_arrow(self.handle, objref)
     else:
-      object_capsule = ray.lib.get_object(self.handle, objref)
-      return serialization.deserialize(self.handle, object_capsule)
+      object_capsule, segmentid = ray.lib.get_object(self.handle, objref)
+      result = serialization.deserialize(self.handle, object_capsule)
+    if isinstance(result, int):
+      result = serialization.Int(result)
+    elif isinstance(result, float):
+      result = serialization.Float(result)
+    elif isinstance(result, bool):
+      return result # can't subclass bool, and don't need to because there is a global True/False
+      # TODO(pcm): close the associated memory segment; if we don't, this leaks memory (but very little, so it is ok for now)
+    elif isinstance(result, list):
+      result = serialization.List(result)
+    elif isinstance(result, dict):
+      result = serialization.Dict(result)
+    elif isinstance(result, tuple):
+      result = serialization.Tuple(result)
+    elif isinstance(result, str):
+      result = serialization.Str(result)
+    elif isinstance(result, np.ndarray):
+      result = result.view(serialization.NDArray)
+    elif result == None:
+      return None # can't subclass None and don't need to because there is a global None
+      # TODO(pcm): close the associated memory segment; if we don't, this leaks memory (but very little, so it is ok for now)
+    # TODO(pcm): Here, we can add the object reference to fix https://github.com/amplab/ray/issues/72
+    result.ray_deallocator = RayDealloc(self.handle, segmentid)
+    return result
 
   def alias_objrefs(self, alias_objref, target_objref):
     """Make `alias_objref` refer to the same object that `target_objref` refers to."""
@@ -48,39 +89,69 @@ class Worker(object):
     """Tell the scheduler to schedule the execution of the function with name `func_name` with arguments `args`. Retrieve object references for the outputs of the function from the scheduler and immediately return them."""
     task_capsule = serialization.serialize_task(self.handle, func_name, args)
     objrefs = ray.lib.submit_task(self.handle, task_capsule)
+    if self.print_task_info:
+      print_task_info(ray.lib.task_info(self.handle))
     return objrefs
 
 # We make `global_worker` a global variable so that there is one worker per worker process.
 global_worker = Worker()
 
+# This is a helper method. It should not be called by users.
+def print_task_info(task_data):
+  num_tasks_succeeded = task_data["num_succeeded"]
+  num_tasks_in_progress = len(task_data["running_tasks"])
+  num_tasks_failed = len(task_data["failed_tasks"])
+  info_strings = []
+  if num_tasks_succeeded > 0:
+    info_strings.append("{}{} task{} succeeded{}".format(colorama.Fore.BLUE, num_tasks_succeeded, "s" if num_tasks_succeeded > 1 else "", colorama.Fore.RESET))
+  if num_tasks_in_progress > 0:
+    info_strings.append("{}{} task{} in progress{}".format(colorama.Fore.GREEN, num_tasks_in_progress, "s" if num_tasks_in_progress > 1 else "", colorama.Fore.RESET))
+  if num_tasks_failed > 0:
+    info_strings.append("{}{} task{} failed{}".format(colorama.Fore.RED, num_tasks_failed, "s" if num_tasks_failed > 1 else "", colorama.Fore.RESET))
+  if len(info_strings) > 0:
+    print ", ".join(info_strings)
+
 def scheduler_info(worker=global_worker):
   return ray.lib.scheduler_info(worker.handle);
 
+def task_info(worker=global_worker):
+  """Tell the scheduler to return task information. Currently includes a list of all failed tasks since the start of the cluster."""
+  return ray.lib.task_info(worker.handle);
+
 def register_module(module, recursive=False, worker=global_worker):
-  print "registering functions in module {}.".format(module.__name__)
+  logging.info("registering functions in module {}.".format(module.__name__))
   for name in dir(module):
     val = getattr(module, name)
     if hasattr(val, "is_remote") and val.is_remote:
-      print "registering {}.".format(val.func_name)
+      logging.info("registering {}.".format(val.func_name))
       worker.register_function(val)
     # elif recursive and isinstance(val, ModuleType):
     #   register_module(val, recursive, worker)
 
-def connect(scheduler_addr, objstore_addr, worker_addr, worker=global_worker):
+def connect(scheduler_addr, objstore_addr, worker_addr, worker=global_worker, print_task_info=False):
   if hasattr(worker, "handle"):
     del worker.handle
   worker.handle = ray.lib.create_worker(scheduler_addr, objstore_addr, worker_addr)
+  FORMAT = "%(asctime)-15s %(message)s"
+  log_basename = os.path.join(LOG_DIRECTORY, (LOG_TIMESTAMP + "-worker-{}").format(datetime.datetime.now(), worker_addr))
+  logging.basicConfig(level=logging.DEBUG, format=FORMAT, filename=log_basename + ".log")
+  ray.lib.set_log_config(log_basename + "-c++.log")
+  worker.set_print_task_info(print_task_info)
 
 def disconnect(worker=global_worker):
   ray.lib.disconnect(worker.handle)
 
 def pull(objref, worker=global_worker):
   ray.lib.request_object(worker.handle, objref)
+  if worker.print_task_info:
+    print_task_info(ray.lib.task_info(worker.handle))
   return worker.get_object(objref)
 
 def push(value, worker=global_worker):
   objref = ray.lib.get_objref(worker.handle)
   worker.put_object(objref, value)
+  if worker.print_task_info:
+    print_task_info(ray.lib.task_info(worker.handle))
   return objref
 
 def main_loop(worker=global_worker):
@@ -105,10 +176,10 @@ def remote(arg_types, return_types, worker=global_worker):
   def remote_decorator(func):
     def func_executor(arguments):
       """This is what gets executed remotely on a worker after a remote function is scheduled by the scheduler."""
-      print "Calling function {}".format(func.__name__)
+      logging.info("Calling function {}".format(func.__name__))
       result = func(*arguments)
       check_return_values(func_call, result) # throws an exception if result is invalid
-      print "Finished executing function {}".format(func.__name__)
+      logging.info("Finished executing function {}".format(func.__name__))
       return result
     def func_call(*args, **kwargs):
       """This is what gets run immediately when a worker calls a remote function."""
@@ -152,7 +223,7 @@ def check_return_values(function, result):
     if len(result) != len(function.return_types):
       raise Exception("The @remote decorator for function {} has {} return values with types {}, but {} returned {} values.".format(function.__name__, len(function.return_types), function.return_types, function.__name__, len(result)))
     for i in range(len(result)):
-      if (not isinstance(result[i], function.return_types[i])) and (not isinstance(result[i], ray.lib.ObjRef)):
+      if (not issubclass(type(result[i]), function.return_types[i])) and (not isinstance(result[i], ray.lib.ObjRef)):
         raise Exception("The {}th return value for function {} has type {}, but the @remote decorator expected a return value of type {} or an ObjRef.".format(i, function.__name__, type(result[i]), function.return_types[i]))
 
 # helper method, this should not be called by the user
@@ -175,7 +246,7 @@ def check_arguments(function, args):
       # TODO(rkn): When we have type information in the ObjRef, do type checking here.
       pass
     else:
-      if not isinstance(arg, expected_type): # TODO(rkn): This check doesn't really work, e.g., isinstance([1,2,3], typing.List[str]) == True
+      if not issubclass(type(arg), expected_type): # TODO(rkn): This check doesn't really work, e.g., issubclass(type([1, 2, 3]), typing.List[str]) == True
         raise Exception("Argument {} for function {} has type {} but an argument of type {} was expected.".format(i, function.__name__, type(arg), expected_type))
 
 # helper method, this should not be called by the user
@@ -200,14 +271,14 @@ def get_arguments_for_execution(function, args, worker=global_worker):
 
     if isinstance(arg, ray.lib.ObjRef):
       # get the object from the local object store
-      print "Getting argument {} for function {}.".format(i, function.__name__)
+      logging.info("Getting argument {} for function {}.".format(i, function.__name__))
       argument = worker.get_object(arg)
-      print "Successfully retrieved argument {} for function {}.".format(i, function.__name__)
+      logging.info("Successfully retrieved argument {} for function {}.".format(i, function.__name__))
     else:
       # pass the argument by value
       argument = arg
 
-    if not isinstance(argument, expected_type):
+    if not issubclass(type(argument), expected_type):
       raise Exception("Argument {} for function {} has type {} but an argument of type {} was expected.".format(i, function.__name__, type(argument), expected_type))
     arguments.append(argument)
   return arguments
@@ -220,7 +291,7 @@ def store_outputs_in_objstore(objrefs, outputs, worker=global_worker):
   for i in range(len(objrefs)):
     if isinstance(outputs[i], ray.lib.ObjRef):
       # An ObjRef is being returned, so we must alias objrefs[i] so that it refers to the same object that outputs[i] refers to
-      print "Aliasing objrefs {} and {}".format(objrefs[i].val, outputs[i].val)
+      logging.info("Aliasing objrefs {} and {}".format(objrefs[i].val, outputs[i].val))
       worker.alias_objrefs(objrefs[i], outputs[i])
       pass
     else:

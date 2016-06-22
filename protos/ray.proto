@@ -43,10 +43,12 @@ service Scheduler {
   rpc DecrementRefCount(DecrementRefCountRequest) returns (AckReply);
   // Used by the worker to notify the scheduler about which objrefs a particular object contains
   rpc AddContainedObjRefs(AddContainedObjRefsRequest) returns (AckReply);
-  // Used by the worker to report back and ask for more work
-  rpc NotifyTaskCompleted(NotifyTaskCompletedRequest) returns (AckReply);
+  // Used by the worker to ask for work, this also returns the status of the previous task if there was one
+  rpc ReadyForNewTask(ReadyForNewTaskRequest) returns (AckReply);
   // Get information about the scheduler state
   rpc SchedulerInfo(SchedulerInfoRequest) returns (SchedulerInfoReply);
+  // Get information about tasks
+  rpc TaskInfo(TaskInfoRequest) returns (TaskInfoReply);
 }
 
 message AckReply {
@@ -77,7 +79,8 @@ message RegisterFunctionRequest {
 }
 
 message SubmitTaskRequest {
-  Task task = 1; // Contains name of the function to be executed and arguments
+  uint64 workerid = 1; // The ID of the worker submitting the task
+  Task task = 2; // Contains name of the function to be executed and arguments
 }
 
 message SubmitTaskReply {
@@ -121,10 +124,13 @@ message DecrementRefCountRequest {
   repeated uint64 objref = 1; // Object references whose reference count should be decremented. Duplicates will be decremented multiple times.
 }
 
-message NotifyTaskCompletedRequest {
+message ReadyForNewTaskRequest {
   uint64 workerid = 1; // ID of the worker which executed the task
-  bool task_succeeded = 2; // True if the task succeeded, false if it threw an exception
-  string error_message = 3; // The contents of the exception, if the task threw an exception
+  message PreviousTaskInfo {
+    bool task_succeeded = 1; // True if the task succeeded, false if it threw an exception
+    string error_message = 2; // The contents of the exception, if the task threw an exception
+  }
+  PreviousTaskInfo previous_task_info = 2; // Information about the previous task, this is only present if there was a previous task
 }
 
 message ChangeCountRequest {
@@ -198,6 +204,16 @@ message DeallocateObjectRequest {
 
 message GetObjRequest {
   uint64 objref = 1; // Object reference of the object being requested by the worker
+}
+
+message TaskInfoRequest {
+}
+
+message TaskInfoReply {
+  repeated TaskStatus failed_task = 1;
+  repeated TaskStatus running_task = 2;
+  uint64 num_succeeded = 3;
+  // TODO(mehrdadn): We'll want to return information from computation_graph since it's important for visualizing tasks that have been completed etc.
 }
 
 // These messages are for getting information about the object store state

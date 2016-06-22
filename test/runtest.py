@@ -123,25 +123,6 @@ class ObjStoreTest(unittest.TestCase):
 
     services.cleanup()
 
-class SchedulerTest(unittest.TestCase):
-
-  def testRemoteTask(self):
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    test_path = os.path.join(test_dir, "test_worker.py")
-    [w] = services.start_singlenode_cluster(return_drivers=True, num_workers_per_objstore=1, worker_path=test_path)
-
-    value_before = "test_string"
-    objref = w.submit_task("test_functions.print_string", [value_before])
-
-    time.sleep(0.2)
-
-    value_after = ray.pull(objref[0], w)
-    self.assertEqual(value_before, value_after)
-
-    time.sleep(0.1)
-
-    services.cleanup()
-
 class WorkerTest(unittest.TestCase):
 
   def testPushPull(self):
@@ -176,9 +157,8 @@ class WorkerTest(unittest.TestCase):
 class APITest(unittest.TestCase):
 
   def testObjRefAliasing(self):
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    test_path = os.path.join(test_dir, "test_worker.py")
-    [w] = services.start_singlenode_cluster(return_drivers=True, num_workers_per_objstore=3, worker_path=test_path)
+    worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_worker.py")
+    [w] = services.start_singlenode_cluster(return_drivers=True, num_workers_per_objstore=3, worker_path=worker_path)
 
     objref = w.submit_task("test_functions.test_alias_f", [])
     self.assertTrue(np.alltrue(ray.pull(objref[0], w) == np.ones([3, 4, 5])))
@@ -190,9 +170,8 @@ class APITest(unittest.TestCase):
     services.cleanup()
 
   def testKeywordArgs(self):
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    test_path = os.path.join(test_dir, "test_worker.py")
-    services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=1, worker_path=test_path)
+    worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_worker.py")
+    services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=1, worker_path=worker_path)
 
     x = test_functions.keyword_fct1(1)
     self.assertEqual(ray.pull(x), "1 hello")
@@ -228,9 +207,8 @@ class APITest(unittest.TestCase):
     services.cleanup()
 
   def testVariableNumberOfArgs(self):
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    test_path = os.path.join(test_dir, "test_worker.py")
-    services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=1, worker_path=test_path)
+    worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_worker.py")
+    services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=1, worker_path=worker_path)
 
     x = test_functions.varargs_fct1(0, 1, 2)
     self.assertEqual(ray.pull(x), "0 1 2")
@@ -242,12 +220,29 @@ class APITest(unittest.TestCase):
 
     services.cleanup()
 
+class TaskStatusTest(unittest.TestCase):
+  def testFailedTask(self):
+    worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_worker.py")
+    services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=3, worker_path=worker_path)
+    test_functions.test_alias_f()
+    test_functions.throw_exception_fct()
+    test_functions.throw_exception_fct()
+    time.sleep(1)
+    result = ray.task_info()
+    self.assertTrue(len(result['failed_tasks']) == 2)
+    task_ids = set()
+    for task in result['failed_tasks']:
+      self.assertTrue(task.has_key('worker_address'))
+      self.assertTrue(task.has_key('operationid'))
+      self.assertEqual(task.get('error_message'), "Test function intentionally failed.")
+      self.assertTrue(task['operationid'] not in task_ids)
+      task_ids.add(task['operationid'])
+
 class ReferenceCountingTest(unittest.TestCase):
 
   def testDeallocation(self):
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    test_path = os.path.join(test_dir, "test_worker.py")
-    services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=3, worker_path=test_path)
+    worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_worker.py")
+    services.start_singlenode_cluster(return_drivers=False, num_workers_per_objstore=3, worker_path=worker_path)
 
     x = test_functions.test_alias_f()
     ray.pull(x)

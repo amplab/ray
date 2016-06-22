@@ -57,7 +57,7 @@ class Worker {
   // stores an arrow object to the local object store
   PyObject* put_arrow(ObjRef objref, PyObject* array);
   // gets an arrow object from the local object store
-  PyObject* get_arrow(ObjRef objref);
+  PyObject* get_arrow(ObjRef objref, SegmentId& segmentid);
   // determine if the object stored in objref is an arrow object // TODO(pcm): more general mechanism for this?
   bool is_arrow(ObjRef objref);
   // make `alias_objref` refer to the same object that `target_objref` refers to
@@ -83,6 +83,8 @@ class Worker {
   bool connected();
   // get info about scheduler state
   void scheduler_info(ClientContext &context, SchedulerInfoRequest &request, SchedulerInfoReply &reply);
+  // get task statuses from scheduler
+  void task_info(ClientContext &context, TaskInfoRequest &request, TaskInfoReply &reply);
 
  private:
   bool connected_;

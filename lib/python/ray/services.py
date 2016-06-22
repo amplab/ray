@@ -2,9 +2,11 @@ import subprocess32 as subprocess
 import os
 import atexit
 import time
+import datetime
 
 import ray
 import ray.worker as worker
+from ray.config import LOG_DIRECTORY, LOG_TIMESTAMP
 
 _services_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -66,16 +68,18 @@ def cleanup():
 # atexit.register(cleanup)
 
 def start_scheduler(scheduler_address):
-  p = subprocess.Popen([os.path.join(_services_path, "scheduler"), scheduler_address])
+  scheduler_log_filename = os.path.join(LOG_DIRECTORY, (LOG_TIMESTAMP + "-scheduler.log").format(datetime.datetime.now()))
+  p = subprocess.Popen([os.path.join(_services_path, "scheduler"), scheduler_address, "--log-file-name", scheduler_log_filename])
   all_processes.append((p, scheduler_address))
 
 def start_objstore(scheduler_address, objstore_address):
-  p = subprocess.Popen([os.path.join(_services_path, "objstore"), scheduler_address, objstore_address])
+  objstore_log_filename = os.path.join(LOG_DIRECTORY, (LOG_TIMESTAMP + "-objstore-{}.log").format(datetime.datetime.now(), objstore_address))
+  p = subprocess.Popen([os.path.join(_services_path, "objstore"), scheduler_address, objstore_address, "--log-file-name", objstore_log_filename])
   all_processes.append((p, objstore_address))
 
-def start_worker(test_path, scheduler_address, objstore_address, worker_address):
+def start_worker(worker_path, scheduler_address, objstore_address, worker_address):
   p = subprocess.Popen(["python",
-                        test_path,
+                        worker_path,
                         "--scheduler-address=" + scheduler_address,
                         "--objstore-address=" + objstore_address,
                         "--worker-address=" + worker_address])
@@ -100,7 +104,7 @@ def start_node(scheduler_address, node_ip_address, num_workers, worker_path=None
   ray.connect(scheduler_address, objstore_address, address(node_ip_address, new_worker_port()))
   time.sleep(0.5)
 
-def start_singlenode_cluster(return_drivers=False, num_objstores=1, num_workers_per_objstore=0, worker_path=None):
+def start_singlenode_cluster(return_drivers=False, num_objstores=1, num_workers_per_objstore=0, worker_path=None, print_task_info=False):
   global drivers
   if num_workers_per_objstore > 0 and worker_path is None:
     raise Exception("Attempting to start a cluster with {} workers per object store, but `worker_path` is None.".format(num_workers_per_objstore))
@@ -130,5 +134,5 @@ def start_singlenode_cluster(return_drivers=False, num_objstores=1, num_workers_
     time.sleep(0.5)
     return driver_workers
   else:
-    ray.connect(scheduler_address, objstore_addresses[0], address(IP_ADDRESS, new_worker_port()))
+    ray.connect(scheduler_address, objstore_addresses[0], address(IP_ADDRESS, new_worker_port()), print_task_info=print_task_info)
     time.sleep(0.5)
