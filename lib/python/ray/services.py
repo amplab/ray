@@ -69,11 +69,11 @@ def cleanup():
 # atexit.register(cleanup)
 
 def start_scheduler(scheduler_address):
-  p = subprocess.Popen(["scheduler", scheduler_address, "--log-file-name", config.get_log_file_path("scheduler")], env=_services_env)
+  p = subprocess.Popen(["scheduler", scheduler_address, "--log-file-name", config.get_log_file_path("scheduler.log")], env=_services_env)
   all_processes.append((p, scheduler_address))
 
 def start_objstore(scheduler_address, objstore_address):
-  p = subprocess.Popen(["objstore", scheduler_address, objstore_address, "--log-file-name", config.get_log_file_path("-".join(["objstore", objstore_address]))], env=_services_env)
+  p = subprocess.Popen(["objstore", scheduler_address, objstore_address, "--log-file-name", config.get_log_file_path("-".join(["objstore", objstore_address]) + ".log")], env=_services_env)
   all_processes.append((p, objstore_address))
 
 def start_worker(worker_path, scheduler_address, objstore_address, worker_address):
