@@ -10,7 +10,7 @@ import colorama
 import copy
 
 import ray
-from ray.config import LOG_DIRECTORY, LOG_TIMESTAMP
+import ray.config as config
 import serialization
 import ray.internal.graph_pb2
 import ray.graph
@@ -206,9 +206,8 @@ def connect(scheduler_address, objstore_address, worker_address, is_driver=False
   worker.handle = ray.lib.create_worker(worker.scheduler_address, worker.objstore_address, worker.worker_address, is_driver)
   worker.set_mode(mode)
   FORMAT = "%(asctime)-15s %(message)s"
-  log_basename = os.path.join(LOG_DIRECTORY, (LOG_TIMESTAMP + "-worker-{}").format(datetime.datetime.now(), worker_address))
-  logging.basicConfig(level=logging.DEBUG, format=FORMAT, filename=log_basename + ".log")
-  ray.lib.set_log_config(log_basename + "-c++.log")
+  logging.basicConfig(level=logging.DEBUG, format=FORMAT, filename=config.get_log_file_path("-".join(["worker", worker_address])))
+  ray.lib.set_log_config(config.get_log_file_path("-".join(["worker", worker_address, "c++"])))
 
 def disconnect(worker=global_worker):
   ray.lib.disconnect(worker.handle)
