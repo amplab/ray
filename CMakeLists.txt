@@ -9,7 +9,34 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 set(CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/" ${CMAKE_PREFIX_PATH})
 
 find_package(PythonInterp REQUIRED)
-find_package(PythonLibs REQUIRED)
+if(NOT APPLE)
+    find_package(PythonLibs REQUIRED)
+else(NOT APPLE)
+    # the purpose of this section is to make sure we find the right version of Python on Mac OS X
+        # fallback when standard search does not work
+	message(${PYTHON_EXECUTABLE})
+        execute_process ( COMMAND ${PYTHON_EXECUTABLE} -c
+                          "import sys; skip = 2 if sys.platform.startswith('win') else 1; print 'python' + sys.version[0:3:skip]"
+                          OUTPUT_VARIABLE PYTHON_LIBRARY_NAME OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process ( COMMAND ${PYTHON_EXECUTABLE} -c
+                          "import sys; print sys.exec_prefix"
+                          OUTPUT_VARIABLE PYTHON_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE)
+	message("Python library name: " ${PYTHON_LIBRARY_NAME})
+	set(${CMAKE_FIND_FRAMEWORK} LAST)
+        FIND_LIBRARY(PYTHON_LIBRARIES ${PYTHON_LIBRARY_NAME} "${PYTHON_PREFIX}/lib" "${PYTHON_PREFIX}/libs" NO_DEFAULT_PATH)
+        execute_process ( COMMAND ${PYTHON_EXECUTABLE} -c
+                          "from distutils.sysconfig import *; print get_python_inc()"
+                          OUTPUT_VARIABLE PYTHON_INCLUDE_DIRS OUTPUT_STRIP_TRAILING_WHITESPACE)
+	# set(${PYTHON_LIBRARY} ${PYTHON_PREFIX}/lib)
+        # set(${PYTHON_INCLUDE_DIR} ${PYTHON_INCLUDE_DIRS})
+	# find_package(PythonLibs REQUIRED)
+        if(PYTHON_LIBRARIES AND PYTHON_INCLUDE_DIRS)
+	    message("herehrehre")
+            SET(PYTHONLIBS_FOUND TRUE)
+        endif()
+    message("-- Found PythonLibs: "${PYTHON_LIBRARIES})
+endif(NOT APPLE)
+
 find_package(NumPy REQUIRED)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
@@ -23,14 +50,10 @@ include_directories("${NUMPY_INCLUDE_DIR}")
 
 set(PROTO_PATH "${CMAKE_SOURCE_DIR}/protos")
 
-set(GRAPH_PROTO "${PROTO_PATH}/graph.proto")
 set(RAY_PROTO "${PROTO_PATH}/ray.proto")
 set(TYPES_PROTO "${PROTO_PATH}/types.proto")
 set(GENERATED_PROTOBUF_PATH "${CMAKE_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY ${GENERATED_PROTOBUF_PATH})
-
-set(GRAPH_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/graph.pb.cc")
-set(GRAPH_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/graph.pb.h")
 
 set(RAY_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/ray.pb.cc")
 set(RAY_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/ray.pb.h")
@@ -39,15 +62,8 @@ set(RAY_GRPC_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/ray.grpc.pb.h")
 
 set(TYPES_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/types.pb.cc")
 set(TYPES_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/types.pb.h")
-
-add_custom_command(
-    OUTPUT "${GRAPH_PB_H_FILE}"
-           "${GRAPH_PB_CPP_FILE}"
-    COMMAND ${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/protobuf/protoc
-    ARGS "--proto_path=${PROTO_PATH}"
-         "--cpp_out=${GENERATED_PROTOBUF_PATH}"
-         "${GRAPH_PROTO}"
-    )
+set(TYPES_GRPC_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/types.grpc.pb.cc")
+set(TYPES_GRPC_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/types.grpc.pb.h")
 
 add_custom_command(
     OUTPUT "${RAY_PB_H_FILE}"
@@ -68,17 +84,23 @@ add_custom_command(
 add_custom_command(
     OUTPUT "${TYPES_PB_H_FILE}"
            "${TYPES_PB_CPP_FILE}"
+           "${TYPES_GRPC_PB_H_FILE}"
+           "${TYPES_GRPC_PB_CPP_FILE}"
     COMMAND ${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/protobuf/protoc
     ARGS "--proto_path=${PROTO_PATH}"
          "--cpp_out=${GENERATED_PROTOBUF_PATH}"
          "${TYPES_PROTO}"
+    COMMAND ${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/protobuf/protoc
+    ARGS "--proto_path=${PROTO_PATH}"
+         "--grpc_out=${GENERATED_PROTOBUF_PATH}"
+         "--plugin=protoc-gen-grpc=${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/grpc_cpp_plugin"
+         "${TYPES_PROTO}"
     )
 
-set(GENERATED_PROTOBUF_FILES
-    ${GRAPH_PB_H_FILE} ${GRAPH_PB_CPP_FILE}
-    ${RAY_PB_H_FILE} ${RAY_PB_CPP_FILE}
+set(GENERATED_PROTOBUF_FILES ${RAY_PB_H_FILE} ${RAY_PB_CPP_FILE}
     ${RAY_GRPC_PB_H_FILE} ${RAY_GRPC_PB_CPP_FILE}
-    ${TYPES_PB_H_FILE} ${TYPES_PB_CPP_FILE})
+    ${TYPES_PB_H_FILE} ${TYPES_PB_CPP_FILE}
+    ${TYPES_GRPC_PB_H_FILE} ${TYPES_GRPC_PB_CPP_FILE})
 
 include_directories(${GENERATED_PROTOBUF_PATH})
 
