@@ -13,22 +13,27 @@ if(NOT APPLE)
     find_package(PythonLibs REQUIRED)
 else(NOT APPLE)
     # the purpose of this section is to make sure we find the right version of Python on Mac OS X
-    if(NOT PYTHONLIBS_FOUND)
         # fallback when standard search does not work
+	message(${PYTHON_EXECUTABLE})
         execute_process ( COMMAND ${PYTHON_EXECUTABLE} -c
                           "import sys; skip = 2 if sys.platform.startswith('win') else 1; print 'python' + sys.version[0:3:skip]"
                           OUTPUT_VARIABLE PYTHON_LIBRARY_NAME OUTPUT_STRIP_TRAILING_WHITESPACE)
         execute_process ( COMMAND ${PYTHON_EXECUTABLE} -c
                           "import sys; print sys.exec_prefix"
                           OUTPUT_VARIABLE PYTHON_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE)
-        FIND_LIBRARY(PYTHON_LIBRARIES ${PYTHON_LIBRARY_NAME} "${PYTHON_PREFIX}/libs")
+	message("Python library name: " ${PYTHON_LIBRARY_NAME})
+	set(${CMAKE_FIND_FRAMEWORK} LAST)
+        FIND_LIBRARY(PYTHON_LIBRARIES ${PYTHON_LIBRARY_NAME} "${PYTHON_PREFIX}/lib" "${PYTHON_PREFIX}/libs" NO_DEFAULT_PATH)
         execute_process ( COMMAND ${PYTHON_EXECUTABLE} -c
                           "from distutils.sysconfig import *; print get_python_inc()"
                           OUTPUT_VARIABLE PYTHON_INCLUDE_DIRS OUTPUT_STRIP_TRAILING_WHITESPACE)
+	# set(${PYTHON_LIBRARY} ${PYTHON_PREFIX}/lib)
+        # set(${PYTHON_INCLUDE_DIR} ${PYTHON_INCLUDE_DIRS})
+	# find_package(PythonLibs REQUIRED)
         if(PYTHON_LIBRARIES AND PYTHON_INCLUDE_DIRS)
+	    message("herehrehre")
             SET(PYTHONLIBS_FOUND TRUE)
         endif()
-    endif()
     message("-- Found PythonLibs: "${PYTHON_LIBRARIES})
 endif(NOT APPLE)
 
