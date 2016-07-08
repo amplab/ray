@@ -69,7 +69,10 @@ def cleanup():
       print "Successfully killed process at address " + address + "."
       continue
     print "Kill attempt failed, attempting to terminate process at address " + address + "."
-    p.terminate()
+    try:
+      p.terminate()
+    except Error as e:
+      print "Failed to terminate process due to the following error, but continuing:", e
     time.sleep(0.05) # is this necessary?
     if p.poll is not None:
       print "Successfully terminated process at address " + address + "."
