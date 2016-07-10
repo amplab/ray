@@ -3,6 +3,8 @@ import ray
 import ray.services as services
 import os
 import tensorflow as tf
+import ray.datasets.imagenet as imagenet
+
 import functions
 
 def one_hot(x):
@@ -17,7 +19,6 @@ weights = []
 worker_dir = os.path.dirname(os.path.abspath(__file__))
 worker_path = os.path.join(worker_dir, "worker.py")
 services.start_ray_local(num_workers=num_workers, worker_path=worker_path)
-
 
 Y = np.asarray(map(one_hot,np.random.randint(0, 1000, size=[1000]))) # Random labels and images in lieu of actual imagenet data
 X = np.random.uniform(size=[1000, 224, 224, 3])
@@ -34,20 +35,20 @@ while True:
   weightrefs = map(ray.put, weights)
   print "Weightrefs created"
   for i in range(num_workers):
-    functions.updateweights(*weightrefs)
+    functions.update_weights(*weightrefs)
   print "Workers updated"
   for i in range(num_workers):
     randindices = np.random.randint(0, 1000, size=[20])
     xref = ray.put(np.asarray(map(lambda i: X[i], randindices)))
     yref = ray.put(np.asarray(map(lambda i: Y[i], randindices)))
-    results.append(functions.computegrad(xref, yref))
+    results.append(functions.compute_grad(xref, yref))
   print "Grads recieved"
   actualresult = map(lambda x: map(ray.get, x), results)
   grads = [np.asarray([gradset[i] for gradset in actualresult]) for i in range(16)] # 16 gradients, one for each variable
   gradientvalues = map(lambda x: np.mean(x, axis=0), grads) # Taking mean over all the samples
   functions.sess.run(functions.application, feed_dict=dict(zip(functions.placeholders, gradientvalues))) # Feeding the new values in
   if (batchnum % 10 == 0):
-    functions.printaccuracy(X, Y)
+    functions.print_accuracy(X, Y)
   print("End of batch {}".format(batchnum))
   batchnum += 1
 
