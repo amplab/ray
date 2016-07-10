@@ -19,9 +19,9 @@ weights = []
 worker_dir = os.path.dirname(os.path.abspath(__file__))
 worker_path = os.path.join(worker_dir, "worker.py")
 services.start_ray_local(num_workers=num_workers, worker_path=worker_path)
-
-Y = np.asarray(map(one_hot,np.random.randint(0, 1000, size=[1000]))) # Random labels and images in lieu of actual imagenet data
-X = np.random.uniform(size=[1000, 224, 224, 3])
+# Y = np.asarray(map(one_hot,np.random.randint(0, 1000, size=[1000]))) # Random labels and images in lieu of actual imagenet data
+# X = np.random.uniform(size=[1000, 224, 224, 3])
+X = imagenet.load_tarfiles_from_s3(args.s3_bucket, map(str, images), [256, 256])
 for placeholder in functions.placeholders:
   weights.append(np.random.normal(scale = 1e-1, size=placeholder.get_shape()))
 print "weights inited"
