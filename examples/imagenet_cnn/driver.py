@@ -5,10 +5,10 @@ import os
 import tensorflow as tf
 import functions
 
-def oneandzeros(x):
+def one_hot(x):
   zero = np.zeros([1000])
   zero[x] = 1.0
-  return(zero)
+  return zero
 
 num_workers = 3
 batchnum = 0
@@ -19,7 +19,7 @@ worker_path = os.path.join(worker_dir, "worker.py")
 services.start_ray_local(num_workers=num_workers, worker_path=worker_path)
 
 
-Y = np.asarray(map(oneandzeros,np.random.randint(0, 1000, size=[1000]))) # Random labels and images in lieu of actual imagenet data
+Y = np.asarray(map(one_hot,np.random.randint(0, 1000, size=[1000]))) # Random labels and images in lieu of actual imagenet data
 X = np.random.uniform(size=[1000, 224, 224, 3])
 for placeholder in functions.placeholders:
   weights.append(np.random.normal(scale = 1e-1, size=placeholder.get_shape()))
@@ -38,13 +38,13 @@ while True:
   print "Workers updated"
   for i in range(num_workers):
     randindices = np.random.randint(0, 1000, size=[20])
-    xref = ray.put(np.asarray(map(lambda(i): X[i], randindices)))
-    yref = ray.put(np.asarray(map(lambda(i): Y[i], randindices)))
+    xref = ray.put(np.asarray(map(lambda i: X[i], randindices)))
+    yref = ray.put(np.asarray(map(lambda i: Y[i], randindices)))
     results.append(functions.computegrad(xref, yref))
   print "Grads recieved"
-  actualresult = map(lambda(x): map(ray.get, x), results)
+  actualresult = map(lambda x: map(ray.get, x), results)
   grads = [np.asarray([gradset[i] for gradset in actualresult]) for i in range(16)] # 16 gradients, one for each variable
-  gradientvalues = map(lambda(x): np.mean(x, axis=0), grads) # Taking mean over all the samples
+  gradientvalues = map(lambda x: np.mean(x, axis=0), grads) # Taking mean over all the samples
   functions.sess.run(functions.application, feed_dict=dict(zip(functions.placeholders, gradientvalues))) # Feeding the new values in
   if (batchnum % 10 == 0):
     functions.printaccuracy(X, Y)
