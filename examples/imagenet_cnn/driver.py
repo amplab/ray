@@ -4,6 +4,8 @@ import ray.services as services
 import os
 import tensorflow as tf
 import ray.datasets.imagenet as imagenet
+import argparse
+import boto3
 
 import functions
 
@@ -16,12 +18,24 @@ num_workers = 3
 batchnum = 0
 weights = []
 
+parser = argparse.ArgumentParser(description="Parse information for data loading.")
+parser.add_argument("--s3-bucket", type=str, required=True, help="Name of the bucket that contains the image data.")
+parser.add_argument("--key-prefix", default="ILSVRC2012_img_train/n015", type=str, help="Prefix for files to fetch.")
+parser.add_argument("--label-file", default="train.txt", type=str, help="File containing labels")
+
+args = parser.parse_args()
 worker_dir = os.path.dirname(os.path.abspath(__file__))
 worker_path = os.path.join(worker_dir, "worker.py")
 services.start_ray_local(num_workers=num_workers, worker_path=worker_path)
 # Y = np.asarray(map(one_hot,np.random.randint(0, 1000, size=[1000]))) # Random labels and images in lieu of actual imagenet data
 # X = np.random.uniform(size=[1000, 224, 224, 3])
+s3 = boto3.resource("s3")
+imagenet_bucket = s3.Bucket(args.s3_bucket)
+objects = imagenet_bucket.objects.filter(Prefix=args.key_prefix)
+images = [obj.key for obj in objects.all()]
+
 X = imagenet.load_tarfiles_from_s3(args.s3_bucket, map(str, images), [256, 256])
+
 for placeholder in functions.placeholders:
   weights.append(np.random.normal(scale = 1e-1, size=placeholder.get_shape()))
 print "weights inited"
