@@ -2,6 +2,13 @@ import tensorflow as tf
 import numpy as np
 import ray
 
+
+def cropimage(img):
+  cropx = np.random.randint(0,31)
+  cropy = np.random.randint(0,31)
+  return img[cropx:cropx+224][cropy:cropy+224]
+
+
 @ray.remote(16 * [np.ndarray], [])
 def update_weights(*weight):
   """
@@ -22,7 +29,11 @@ def compute_grad(X, Y):
   :param Y:Labels corresponding to each image
   :rtype: List of gradients for each variable
   """
-  return sess.run([g for (g,v) in compgrads], feed_dict={images:X, y_true:Y, dropout:0.5})
+  randindices = np.random.randint(0, len(X), size=[20])
+  subX = map(lambda ind:X[ind], randindices)
+  subY = map(lambda ind:Y[ind], randindices)
+  croppedX = map(cropimage, subX)
+  return sess.run([g for (g,v) in compgrads], feed_dict={images:croppedX, y_true:subY, dropout:0.5})
 
 def print_accuracy(X, Y):
   """

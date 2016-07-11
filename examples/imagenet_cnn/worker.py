@@ -1,6 +1,7 @@
 import argparse
 import ray
 import ray.worker as worker
+import ray.datasets.imagenet
 
 import functions
 

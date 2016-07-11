@@ -6,6 +6,7 @@ import tensorflow as tf
 import ray.datasets.imagenet as imagenet
 import argparse
 import boto3
+import random
 
 import functions
 
@@ -19,7 +20,7 @@ batchnum = 0
 weights = []
 
 parser = argparse.ArgumentParser(description="Parse information for data loading.")
-parser.add_argument("--s3-bucket", type=str, required=True, help="Name of the bucket that contains the image data.")
+parser.add_argument("--s3-bucket", default="sparknet", type=str, help="Name of the bucket that contains the image data.")
 parser.add_argument("--key-prefix", default="ILSVRC2012_img_train/n015", type=str, help="Prefix for files to fetch.")
 parser.add_argument("--label-file", default="train.txt", type=str, help="File containing labels")
 
@@ -34,8 +35,17 @@ imagenet_bucket = s3.Bucket(args.s3_bucket)
 objects = imagenet_bucket.objects.filter(Prefix=args.key_prefix)
 images = [obj.key for obj in objects.all()]
 
-X = imagenet.load_tarfiles_from_s3(args.s3_bucket, map(str, images), [256, 256])
+imagenet = ray.get(imagenet.load_tarfiles_from_s3(args.s3_bucket, map(str, images), [256, 256]))
+print imagenet[0]
+X = map(lambda img: img[0], imagenet)
 
+s5 = boto3.client("s3")
+labels = s5.get_object(Bucket=args.s3_bucket, Key=args.label_file)
+lines = labels["Body"].read().split("\n")
+imagepairs = map(lambda line: line.split(" ", 2), lines)
+imagenames = map(lambda img: ray.get(img[1]), imagenet)
+Y = map(lambda imglist: ray.put(map(lambda imgname:int(filter(lambda x:imgname in x, imagepairs)[0][1]), imglist)), imagenames)
+batches = zip(X,Y)
 for placeholder in functions.placeholders:
   weights.append(np.random.normal(scale = 1e-1, size=placeholder.get_shape()))
 print "weights inited"
@@ -52,9 +62,9 @@ while True:
     functions.update_weights(*weightrefs)
   print "Workers updated"
   for i in range(num_workers):
-    randindices = np.random.randint(0, 1000, size=[20])
-    xref = ray.put(np.asarray(map(lambda i: X[i], randindices)))
-    yref = ray.put(np.asarray(map(lambda i: Y[i], randindices)))
+    curbatch = random.choice(batches)
+    xref = curbatch[0]
+    yref = curbatch[1]
     results.append(functions.compute_grad(xref, yref))
   print "Grads recieved"
   actualresult = map(lambda x: map(ray.get, x), results)
