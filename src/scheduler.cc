@@ -539,30 +539,32 @@ void SchedulerService::register_function(const std::string& name, WorkerId worke
 }
 
 void SchedulerService::get_info(const SchedulerInfoRequest& request, SchedulerInfoReply* reply) {
-  acquire_all_locks();
-  auto reference_counts = reference_counts_.unsafe_get();
+  auto computation_graph = computation_graph_.get();
+  auto fntable = fntable_.get();
+  auto avail_workers = avail_workers_.get();
+  auto task_queue = task_queue_.get();
+  auto reference_counts = reference_counts_.get();
+  auto target_objrefs = target_objrefs_.get();
+  auto function_table = reply->mutable_function_table();
   for (int i = 0; i < reference_counts->size(); ++i) {
     reply->add_reference_count((*reference_counts)[i]);
   }
-  auto target_objrefs = target_objrefs_.unsafe_get();
   for (int i = 0; i < target_objrefs->size(); ++i) {
     reply->add_target_objref((*target_objrefs)[i]);
   }
-  auto function_table = reply->mutable_function_table();
-  for (const auto& entry : *fntable_.unsafe_get()) {
+  for (const auto& entry : *fntable) {
     (*function_table)[entry.first].set_num_return_vals(entry.second.num_return_vals());
     for (const WorkerId& worker : entry.second.workers()) {
       (*function_table)[entry.first].add_workerid(worker);
     }
   }
-  for (const auto& entry : *task_queue_.unsafe_get()) {
+  for (const auto& entry : *task_queue) {
     reply->add_operationid(entry);
   }
-  for (const WorkerId& entry : *avail_workers_.unsafe_get()) {
+  for (const WorkerId& entry : *avail_workers) {
     reply->add_avail_worker(entry);
   }
-  computation_graph_.unsafe_get()->to_protobuf(reply->mutable_computation_graph());
-  release_all_locks();
+  computation_graph->to_protobuf(reply->mutable_computation_graph());
 }
 
 // pick_objstore must be called with a canonical_objref
@@ -870,45 +872,6 @@ void SchedulerService::export_all_reusable_variables_to_worker(WorkerId workerid
   for (int i = 0; i < exported_reusable_variables->size(); ++i) {
     export_reusable_variable_to_worker(workerid, i, workers, exported_reusable_variables);
   }
-}
-
-// This method defines the order in which locks should be acquired.
-void SchedulerService::do_on_locks(bool lock) {
-  std::mutex *mutexes[] = {
-    &successful_tasks_.mutex(),
-    &failed_tasks_.mutex(),
-    &get_queue_.mutex(),
-    &computation_graph_.mutex(),
-    &fntable_.mutex(),
-    &avail_workers_.mutex(),
-    &task_queue_.mutex(),
-    &reference_counts_.mutex(),
-    &contained_objrefs_.mutex(),
-    &workers_.mutex(),
-    &alias_notification_queue_.mutex(),
-    &objtable_.mutex(),
-    &objstores_.mutex(),
-    &target_objrefs_.mutex(),
-    &reverse_target_objrefs_.mutex(),
-    &exported_functions_.mutex(),
-    &exported_reusable_variables_.mutex(),
-  };
-  size_t n = sizeof(mutexes) / sizeof(*mutexes);
-  for (size_t i = 0; i != n; ++i) {
-    if (lock) {
-      mutexes[i]->lock();
-    } else {
-      mutexes[n - i - 1]->unlock();
-    }
-  }
-}
-
-void SchedulerService::acquire_all_locks() {
-  do_on_locks(true);
-}
-
-void SchedulerService::release_all_locks() {
-  do_on_locks(false);
 }
 
 void start_scheduler_service(const char* service_addr, SchedulingAlgorithmType scheduling_algorithm) {

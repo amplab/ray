@@ -147,21 +147,37 @@ private:
   // ensure that no other remote functions are exported to the worker while this
   // method is being called.
   void export_all_reusable_variables_to_worker(WorkerId workerid, SynchronizedPtr<std::vector<WorkerHandle> > &workers, const SynchronizedPtr<std::vector<std::unique_ptr<ReusableVar> > > &exported_reusable_variables);
-  // acquires all locks, this should only be used by get_info and for fault tolerance
-  void acquire_all_locks();
-  // release all locks, this should only be used by get_info and for fault tolerance
-  void release_all_locks();
-  // acquire or release all the locks. This is a single method to ensure a single canonical ordering of the locks.
-  void do_on_locks(bool lock);
 
+  // List of the IDs of successful tasks
+  Synchronized<std::vector<OperationId> > successful_tasks_; // Right now, we only use this information in the TaskInfo call.
+  // List of failed tasks
+  Synchronized<std::vector<TaskStatus> > failed_tasks_;
+  // List of pending get calls.
+  Synchronized<std::vector<std::pair<WorkerId, ObjRef> > > get_queue_;
   // The computation graph tracks the operations that have been submitted to the
   // scheduler and is mostly used for fault tolerance.
   Synchronized<ComputationGraph> computation_graph_;
+  // Hash map from function names to workers where the function is registered.
+  Synchronized<FnTable> fntable_;
+  // Vector of all workers that are currently idle.
+  Synchronized<std::vector<WorkerId> > avail_workers_;
+  // List of pending tasks.
+  Synchronized<std::deque<OperationId> > task_queue_;
+  // Reference counts. Currently, reference_counts_[objref] is the number of
+  // existing references held to objref. This is done for all objrefs, not just
+  // canonical_objrefs. This data structure completely ignores aliasing. If the
+  // object corresponding to objref has been deallocated, then
+  // reference_counts[objref] will equal DEALLOCATED.
+  Synchronized<std::vector<RefCount> > reference_counts_;
+  // contained_objrefs_[objref] is a vector of all of the objrefs contained inside the object referred to by objref
+  Synchronized<std::vector<std::vector<ObjRef> > > contained_objrefs_;
   // Vector of all workers registered in the system. Their index in this vector
   // is the workerid.
   Synchronized<std::vector<WorkerHandle> > workers_;
-  // Vector of all workers that are currently idle.
-  Synchronized<std::vector<WorkerId> > avail_workers_;
+  // List of pending alias notifications. Each element consists of (objstoreid, (alias_objref, canonical_objref)).
+  Synchronized<std::vector<std::pair<ObjStoreId, std::pair<ObjRef, ObjRef> > > > alias_notification_queue_;
+  // Mapping from canonical objref to list of object stores where the object is stored. Non-canonical (aliased) objrefs should not be used to index objtable_.
+  Synchronized<ObjTable> objtable_; // This lock protects objtable_ and objects_in_transit_
   // Vector of all object stores registered in the system. Their index in this
   // vector is the objstoreid.
   Synchronized<std::vector<ObjStoreHandle> > objstores_;
@@ -173,8 +189,6 @@ private:
   Synchronized<std::vector<ObjRef> > target_objrefs_;
   // This data structure maps an objref to all of the objrefs that alias it (there could be multiple such objrefs).
   Synchronized<std::vector<std::vector<ObjRef> > > reverse_target_objrefs_;
-  // Mapping from canonical objref to list of object stores where the object is stored. Non-canonical (aliased) objrefs should not be used to index objtable_.
-  Synchronized<ObjTable> objtable_; // This lock protects objtable_ and objects_in_transit_
   // For each object store objstoreid, objects_in_transit_[objstoreid] is a
   // vector of the canonical object references that are being streamed to that
   // object store but are not yet present. Object references are added to this
@@ -185,26 +199,6 @@ private:
   // lock (objects_lock_). // TODO(rkn): Consider making this part of the
   // objtable data structure.
   std::vector<std::vector<ObjRef> > objects_in_transit_;
-  // Hash map from function names to workers where the function is registered.
-  Synchronized<FnTable> fntable_;
-  // List of pending tasks.
-  Synchronized<std::deque<OperationId> > task_queue_;
-  // List of pending get calls.
-  Synchronized<std::vector<std::pair<WorkerId, ObjRef> > > get_queue_;
-  // List of failed tasks
-  Synchronized<std::vector<TaskStatus> > failed_tasks_;
-  // List of the IDs of successful tasks
-  Synchronized<std::vector<OperationId> > successful_tasks_; // Right now, we only use this information in the TaskInfo call.
-  // List of pending alias notifications. Each element consists of (objstoreid, (alias_objref, canonical_objref)).
-  Synchronized<std::vector<std::pair<ObjStoreId, std::pair<ObjRef, ObjRef> > > > alias_notification_queue_;
-  // Reference counts. Currently, reference_counts_[objref] is the number of
-  // existing references held to objref. This is done for all objrefs, not just
-  // canonical_objrefs. This data structure completely ignores aliasing. If the
-  // object corresponding to objref has been deallocated, then
-  // reference_counts[objref] will equal DEALLOCATED.
-  Synchronized<std::vector<RefCount> > reference_counts_;
-  // contained_objrefs_[objref] is a vector of all of the objrefs contained inside the object referred to by objref
-  Synchronized<std::vector<std::vector<ObjRef> > > contained_objrefs_;
   // All of the remote functions that have been exported to the workers.
   Synchronized<std::vector<std::unique_ptr<Function> > > exported_functions_;
   // All of the reusable variables that have been exported to the workers.
