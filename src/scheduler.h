@@ -77,6 +77,16 @@ public:
   Status ExportFunction(ServerContext* context, const ExportFunctionRequest* request, ExportFunctionReply* reply) override;
   Status ExportReusableVariable(ServerContext* context, const ExportReusableVariableRequest* request, AckReply* reply) override;
 
+#ifdef NDEBUG
+  // If we've disabled assertions, then just use regular SynchronizedPtr to skip lock checking.
+  template<class T>
+  using MySynchronizedPtr = SynchronizedPtr<T>;
+#else
+  // A SynchronizedPtr specialized for this class to dynamically check that locks are obtained in the correct order (in the order of field declarations).
+  template<class T>
+  class MySynchronizedPtr;
+#endif
+
   // This will ask an object store to send an object to another object store if
   // the object is not already present in that object store and is not already
   // being transmitted.
@@ -86,7 +96,7 @@ public:
   // assign a task to a worker
   void schedule();
   // execute a task on a worker and ship required object references
-  void assign_task(OperationId operationid, WorkerId workerid, const SynchronizedPtr<ComputationGraph> &computation_graph);
+  void assign_task(OperationId operationid, WorkerId workerid, const MySynchronizedPtr<ComputationGraph> &computation_graph);
   // checks if the dependencies of the task are met
   bool can_run(const Task& task);
   // register a worker and its object store (if it has not been registered yet)
@@ -122,31 +132,43 @@ private:
   bool attempt_notify_alias(ObjStoreId objstoreid, ObjRef alias_objref, ObjRef canonical_objref);
   // tell all of the objstores holding canonical_objref to deallocate it, the
   // data structures are passed into ensure that the appropriate locks are held.
-  void deallocate_object(ObjRef canonical_objref, const SynchronizedPtr<std::vector<RefCount> > &reference_counts, const SynchronizedPtr<std::vector<std::vector<ObjRef> > > &contained_objrefs);
+  void deallocate_object(ObjRef canonical_objref, const MySynchronizedPtr<std::vector<RefCount> > &reference_counts, const MySynchronizedPtr<std::vector<std::vector<ObjRef> > > &contained_objrefs);
   // increment the ref counts for the object references in objrefs, the data
   // structures are passed into ensure that the appropriate locks are held.
-  void increment_ref_count(const std::vector<ObjRef> &objrefs, const SynchronizedPtr<std::vector<RefCount> > &reference_count);
+  void increment_ref_count(const std::vector<ObjRef> &objrefs, const MySynchronizedPtr<std::vector<RefCount> > &reference_count);
   // decrement the ref counts for the object references in objrefs, the data
   // structures are passed into ensure that the appropriate locks are held.
-  void decrement_ref_count(const std::vector<ObjRef> &objrefs, const SynchronizedPtr<std::vector<RefCount> > &reference_count, const SynchronizedPtr<std::vector<std::vector<ObjRef> > > &contained_objrefs);
+  void decrement_ref_count(const std::vector<ObjRef> &objrefs, const MySynchronizedPtr<std::vector<RefCount> > &reference_count, const MySynchronizedPtr<std::vector<std::vector<ObjRef> > > &contained_objrefs);
   // Find all of the object references which are upstream of objref (including objref itself). That is, you can get from everything in objrefs to objref by repeatedly indexing in target_objrefs_.
-  void upstream_objrefs(ObjRef objref, std::vector<ObjRef> &objrefs, const SynchronizedPtr<std::vector<std::vector<ObjRef> > > &reverse_target_objrefs);
+  void upstream_objrefs(ObjRef objref, std::vector<ObjRef> &objrefs, const MySynchronizedPtr<std::vector<std::vector<ObjRef> > > &reverse_target_objrefs);
   // Find all of the object references that refer to the same object as objref (as best as we can determine at the moment). The information may be incomplete because not all of the aliases may be known.
   void get_equivalent_objrefs(ObjRef objref, std::vector<ObjRef> &equivalent_objrefs);
   // Export a remote function to a worker.
-  void export_function_to_worker(WorkerId workerid, int function_index, SynchronizedPtr<std::vector<WorkerHandle> > &workers, const SynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_functions);
+  void export_function_to_worker(WorkerId workerid, int function_index, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_functions);
   // Export a reusable variable to a worker
-  void export_reusable_variable_to_worker(WorkerId workerid, int reusable_variable_index, SynchronizedPtr<std::vector<WorkerHandle> > &workers, const SynchronizedPtr<std::vector<std::unique_ptr<ReusableVar> > > &exported_reusable_variables);
+  void export_reusable_variable_to_worker(WorkerId workerid, int reusable_variable_index, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<ReusableVar> > > &exported_reusable_variables);
   // Export all reusable variables to a worker. This is used when a new worker
   // registers and is protected by the workers lock (which is passed in) to
   // ensure that no other reusable variables are exported to the worker while
   // this method is being called.
-  void export_all_functions_to_worker(WorkerId workerid, SynchronizedPtr<std::vector<WorkerHandle> > &workers, const SynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_functions);
+  void export_all_functions_to_worker(WorkerId workerid, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_functions);
   // Export all remote functions to a worker. This is used when a new worker
   // registers and is protected by the workers lock (which is passed in) to
   // ensure that no other remote functions are exported to the worker while this
   // method is being called.
-  void export_all_reusable_variables_to_worker(WorkerId workerid, SynchronizedPtr<std::vector<WorkerHandle> > &workers, const SynchronizedPtr<std::vector<std::unique_ptr<ReusableVar> > > &exported_reusable_variables);
+  void export_all_reusable_variables_to_worker(WorkerId workerid, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<ReusableVar> > > &exported_reusable_variables);
+
+  template<class T>
+  MySynchronizedPtr<T> get(Synchronized<T>& my_field, const char* name,unsigned int line_number);
+  template<class T>
+  MySynchronizedPtr<const T> get(const Synchronized<T>& my_field, const char* name,unsigned int line_number) const;
+
+  // Preferably keep this as the first field to distinguish it from the rest
+  // Maps every thread to an identifier of a lock it is holding, as well the name of the lock.
+  // Internally, the identifier for each lock is the offset of the field being locked.
+  // When we lock, we set the field offset and store the difference; the difference should always be positive. If not, we throw.
+  // When we unlock, we subtract back the field offset to restore it to the previous field that was locked.
+  mutable Synchronized<std::vector<std::pair<unsigned long long, std::pair<size_t, const char*> > > > lock_orders_;
 
   // List of the IDs of successful tasks
   Synchronized<std::vector<OperationId> > successful_tasks_; // Right now, we only use this information in the TaskInfo call.

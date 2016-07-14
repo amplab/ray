@@ -17,6 +17,7 @@ template<class T, class Mutex> struct SynchronizedSource<const volatile T, Mutex
 
 template<class T>
 class SynchronizedPtr : public std::unique_lock<typename SynchronizedSource<T, void>::type> {
+protected:
   typedef std::unique_lock<typename SynchronizedSource<T, void>::type> base_type;
   // Make these private; they don't make much sense externally...
   using base_type::mutex;
@@ -80,8 +81,8 @@ class Synchronized : public Synchronized<T, void>, public Synchronized<void, Mut
 public:
   template<class... U>
   Synchronized(U&&... args) : base1_type(std::forward<U>(args)...), base2_type() { }
-  SynchronizedPtr<T> get() { return *this; }
-  SynchronizedPtr<const T> get() const { return *this; }
+  SynchronizedPtr<T> unchecked_get() { return *this; }
+  SynchronizedPtr<const T> unchecked_get() const { return *this; }
   void lock() const override { return base2_type::lock(); }
   void unlock() const override { return base2_type::unlock(); }
   bool try_lock() const override { return base2_type::try_lock(); }
