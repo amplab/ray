@@ -1,7 +1,7 @@
 import argparse
 import ray
 import ray.worker as worker
-import ray.datasets.imagenet
+import imagenet
 
 import functions
 
@@ -14,5 +14,5 @@ if __name__ == "__main__":
   args = parser.parse_args()
   ray.connect(args.scheduler_address, args.objstore_address, args.worker_address)
   ray.register_module(functions)
-  ray.register_module(ray.datasets.imagenet)
+  ray.register_module(imagenet)
   worker.main_loop()

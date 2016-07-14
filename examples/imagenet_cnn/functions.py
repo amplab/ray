@@ -2,11 +2,34 @@ import tensorflow as tf
 import numpy as np
 import ray
 
+from typing import Tuple
+
+@ray.remote([np.ndarray, np.ndarray, np.ndarray, np.ndarray], [np.ndarray, np.ndarray])
+def shufflearrays(images1, labels1, images2, labels2):
+  toshuffle = zip(images1, labels1) + zip(images2, labels2)
+  np.random.shuffle(toshuffle)
+  length = len(images1)
+  firstref = zip(*toshuffle[0:length])
+  shuffledarray = map(np.asarray, firstref)
+  return shuffledarray[0], shuffledarray[1]
+
+@ray.remote([Tuple[Tuple, Tuple]], [list])
+def shufflestuples(zippedimages):
+  return shufflearrays(zippedimages[0][0], zippedimages[0][1], zippedimages[1][0], zippedimages[1][1])
+
+@ray.remote([list, dict], [np.ndarray])
+def convert(imglist, imagepairs):
+  return np.asarray(map(lambda imgname:int(imagepairs[imgname]), imglist))
+
+def one_hot(x):
+  zero = np.zeros([1000])
+  zero[x] = 1.0
+  return zero
 
 def cropimage(img):
   cropx = np.random.randint(0,31)
   cropy = np.random.randint(0,31)
-  return img[cropx:cropx+224][cropy:cropy+224]
+  return img[cropx:(cropx+224),cropy:(cropy+224)]
 
 
 @ray.remote(16 * [np.ndarray], [])
@@ -31,10 +54,11 @@ def compute_grad(X, Y):
   """
   randindices = np.random.randint(0, len(X), size=[20])
   subX = map(lambda ind:X[ind], randindices)
-  subY = map(lambda ind:Y[ind], randindices)
-  croppedX = map(cropimage, subX)
+  subY = np.asarray(map(lambda ind:one_hot(Y[ind]), randindices))
+  croppedX = np.asarray(map(cropimage, subX))
   return sess.run([g for (g,v) in compgrads], feed_dict={images:croppedX, y_true:subY, dropout:0.5})
 
+@ray.remote([np.ndarray, np.ndarray], [np.float32])
 def print_accuracy(X, Y):
   """
   Prints the accuracy of the network
@@ -42,7 +66,9 @@ def print_accuracy(X, Y):
   :param Y: Numpy array for labels
   :rtype: None
   """
-  print sess.run(accuracy, feed_dict={images:X, y_true:Y, dropout:1.0})
+  one_hot_Y = np.asarray(map(one_hot, Y))
+  croppedX = np.asarray(map(cropimage, X))
+  return sess.run(accuracy, feed_dict={images:croppedX, y_true:one_hot_Y, dropout:1.0})
 
 def setup_variables(params, placeholders, assigns, kernelshape, biasshape):
   """
