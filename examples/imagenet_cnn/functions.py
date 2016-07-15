@@ -198,7 +198,7 @@ y_pred = tf.clip_by_value(y_pred, tf.cast(1e-10, dtype=tf.float32),
 cross_entropy = tf.reduce_mean(-tf.reduce_sum(y_true * tf.log(y_pred),
                                 reduction_indices=len(y_pred.get_shape()) - 1))
 #opt =  tf.train.MomentumOptimizer(learning_rate=0.001, momentum=0.9)
-opt = tf.train.MomentumOptimizer(learning_rate=0.001, momentum=0.9) # aNY OTHER OPTIMIZIER CAN BE PLACED HERE
+opt = tf.train.MomentumOptimizer(learning_rate=0.001, momentum=0.9) # Any other optimizier can be placed here
 correct_pred = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y_true, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 

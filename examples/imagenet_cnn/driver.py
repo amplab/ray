@@ -7,6 +7,7 @@ import imagenet
 import argparse
 import boto3
 import re
+import random
 
 import functions
 
@@ -25,8 +26,7 @@ args = parser.parse_args()
 worker_dir = os.path.dirname(os.path.abspath(__file__))
 worker_path = os.path.join(worker_dir, "worker.py")
 services.start_ray_local(num_workers=num_workers, worker_path=worker_path)
-# Y = np.asarray(map(one_hot,np.random.randint(0, 1000, size=[1000]))) # Random labels and images in lieu of actual imagenet data
-# X = np.random.uniform(size=[1000, 224, 224, 3])
+
 s3 = boto3.resource("s3")
 imagenet_bucket = s3.Bucket(args.s3_bucket)
 objects = imagenet_bucket.objects.filter(Prefix=args.key_prefix)
