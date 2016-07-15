@@ -1,3 +1,5 @@
+# This script is copied and adapted from https://github.com/amplab/spark-ec2.
+
 from __future__ import division, print_function, with_statement
 
 import codecs
@@ -22,121 +24,6 @@ from datetime import datetime
 from optparse import OptionParser
 from sys import stderr
 
-if sys.version < "3":
-    from urllib2 import urlopen, Request, HTTPError
-else:
-    from urllib.request import urlopen, Request
-    from urllib.error import HTTPError
-    raw_input = input
-    xrange = range
-
-SPARK_EC2_VERSION = "1.6.0"
-SPARK_EC2_DIR = os.path.dirname(os.path.realpath(__file__))
-
-VALID_SPARK_VERSIONS = set([
-    "0.7.3",
-    "0.8.0",
-    "0.8.1",
-    "0.9.0",
-    "0.9.1",
-    "0.9.2",
-    "1.0.0",
-    "1.0.1",
-    "1.0.2",
-    "1.1.0",
-    "1.1.1",
-    "1.2.0",
-    "1.2.1",
-    "1.3.0",
-    "1.3.1",
-    "1.4.0",
-    "1.4.1",
-    "1.5.0",
-    "1.5.1",
-    "1.5.2",
-    "1.6.0",
-])
-
-SPARK_TACHYON_MAP = {
-    "1.0.0": "0.4.1",
-    "1.0.1": "0.4.1",
-    "1.0.2": "0.4.1",
-    "1.1.0": "0.5.0",
-    "1.1.1": "0.5.0",
-    "1.2.0": "0.5.0",
-    "1.2.1": "0.5.0",
-    "1.3.0": "0.5.0",
-    "1.3.1": "0.5.0",
-    "1.4.0": "0.6.4",
-    "1.4.1": "0.6.4",
-    "1.5.0": "0.7.1",
-    "1.5.1": "0.7.1",
-    "1.5.2": "0.7.1",
-    "1.6.0": "0.8.2",
-}
-
-DEFAULT_SPARK_VERSION = SPARK_EC2_VERSION
-DEFAULT_SPARK_GITHUB_REPO = "https://github.com/apache/spark"
-
-# Default location to get the spark-ec2 scripts (and ami-list) from
-DEFAULT_SPARK_EC2_GITHUB_REPO = "https://github.com/amplab/spark-ec2"
-DEFAULT_SPARK_EC2_BRANCH = "branch-1.5"
-
-
-def setup_external_libs(libs):
-    """
-    Download external libraries from PyPI to SPARK_EC2_DIR/lib/ and prepend them to our PATH.
-    """
-    PYPI_URL_PREFIX = "https://pypi.python.org/packages/source"
-    SPARK_EC2_LIB_DIR = os.path.join(SPARK_EC2_DIR, "lib")
-
-    if not os.path.exists(SPARK_EC2_LIB_DIR):
-        print("Downloading external libraries that spark-ec2 needs from PyPI to {path}...".format(
-            path=SPARK_EC2_LIB_DIR
-        ))
-        print("This should be a one-time operation.")
-        os.mkdir(SPARK_EC2_LIB_DIR)
-
-    for lib in libs:
-        versioned_lib_name = "{n}-{v}".format(n=lib["name"], v=lib["version"])
-        lib_dir = os.path.join(SPARK_EC2_LIB_DIR, versioned_lib_name)
-
-        if not os.path.isdir(lib_dir):
-            tgz_file_path = os.path.join(SPARK_EC2_LIB_DIR, versioned_lib_name + ".tar.gz")
-            print(" - Downloading {lib}...".format(lib=lib["name"]))
-            download_stream = urlopen(
-                "{prefix}/{first_letter}/{lib_name}/{lib_name}-{lib_version}.tar.gz".format(
-                    prefix=PYPI_URL_PREFIX,
-                    first_letter=lib["name"][:1],
-                    lib_name=lib["name"],
-                    lib_version=lib["version"]
-                )
-            )
-            with open(tgz_file_path, "wb") as tgz_file:
-                tgz_file.write(download_stream.read())
-            with open(tgz_file_path, "rb") as tar:
-                if hashlib.md5(tar.read()).hexdigest() != lib["md5"]:
-                    print("ERROR: Got wrong md5sum for {lib}.".format(lib=lib["name"]), file=stderr)
-                    sys.exit(1)
-            tar = tarfile.open(tgz_file_path)
-            tar.extractall(path=SPARK_EC2_LIB_DIR)
-            tar.close()
-            os.remove(tgz_file_path)
-            print(" - Finished downloading {lib}.".format(lib=lib["name"]))
-        sys.path.insert(1, lib_dir)
-
-
-# Only PyPI libraries are supported.
-external_libs = [
-    {
-        "name": "boto",
-        "version": "2.34.0",
-        "md5": "5556223d2d0cc4d06dd4829e671dcecd"
-    }
-]
-
-setup_external_libs(external_libs)
-
 import boto
 from boto.ec2.blockdevicemapping import BlockDeviceMapping, BlockDeviceType, EBSBlockDeviceType
 from boto import ec2
@@ -149,17 +36,13 @@ class UsageError(Exception):
 # Configure and parse our command-line arguments
 def parse_args():
     parser = OptionParser(
-        prog="spark-ec2",
-        version="%prog {v}".format(v=SPARK_EC2_VERSION),
+        prog="ec2",
         usage="%prog [options] <action> <cluster_name>\n\n"
-        + "<action> can be: launch, destroy, login, stop, start, get-master, reboot-slaves")
+        + "<action> can be: launch, destroy, stop, start, get-master, reboot-slaves")
 
     parser.add_option(
         "-s", "--slaves", type="int", default=1,
         help="Number of slaves to launch (default: %default)")
-    parser.add_option(
-        "-w", "--wait", type="int",
-        help="DEPRECATED (no longer necessary) - Seconds to wait for nodes to start")
     parser.add_option(
         "-k", "--key-pair",
         help="Key pair to use on instances")
@@ -188,34 +71,6 @@ def parse_args():
     parser.add_option(
         "-a", "--ami",
         help="Amazon Machine Image ID to use")
-    parser.add_option(
-        "-v", "--spark-version", default=DEFAULT_SPARK_VERSION,
-        help="Version of Spark to use: 'X.Y.Z' or a specific git hash (default: %default)")
-    parser.add_option(
-        "--spark-git-repo",
-        default=DEFAULT_SPARK_GITHUB_REPO,
-        help="Github repo from which to checkout supplied commit hash (default: %default)")
-    parser.add_option(
-        "--spark-ec2-git-repo",
-        default=DEFAULT_SPARK_EC2_GITHUB_REPO,
-        help="Github repo from which to checkout spark-ec2 (default: %default)")
-    parser.add_option(
-        "--spark-ec2-git-branch",
-        default=DEFAULT_SPARK_EC2_BRANCH,
-        help="Github repo branch of spark-ec2 to use (default: %default)")
-    parser.add_option(
-        "--deploy-root-dir",
-        default=None,
-        help="A directory to copy into / on the first master. " +
-             "Must be absolute. Note that a trailing slash is handled as per rsync: " +
-             "If you omit it, the last directory of the --deploy-root-dir path will be created " +
-             "in / before copying its contents. If you append the trailing slash, " +
-             "the directory is not created and its contents are copied directly into /. " +
-             "(default: %default).")
-    parser.add_option(
-        "--hadoop-major-version", default="1",
-        help="Major version of Hadoop. Valid options are 1 (Hadoop 1.0.4), 2 (CDH 4.2.0), yarn " +
-             "(Hadoop 2.4.0) (default: %default)")
     parser.add_option(
         "-D", metavar="[ADDRESS:]PORT", dest="proxy_port",
         help="Use SSH dynamic port forwarding to create a SOCKS proxy at " +
@@ -250,14 +105,7 @@ def parse_args():
         help="If specified, launch slaves as spot instances with the given " +
              "maximum price (in dollars)")
     parser.add_option(
-        "--ganglia", action="store_true", default=True,
-        help="Setup Ganglia monitoring on cluster (default: %default). NOTE: " +
-             "the Ganglia page will be publicly accessible")
-    parser.add_option(
-        "--no-ganglia", action="store_false", dest="ganglia",
-        help="Disable Ganglia monitoring for the cluster")
-    parser.add_option(
-        "-u", "--user", default="root",
+        "-u", "--user", default="ubuntu",
         help="The SSH user you want to connect as (default: %default)")
     parser.add_option(
         "--delete-groups", action="store_true", default=False,
@@ -265,17 +113,6 @@ def parse_args():
     parser.add_option(
         "--use-existing-master", action="store_true", default=False,
         help="Launch fresh slaves, but use an existing stopped master if possible")
-    parser.add_option(
-        "--worker-instances", type="int", default=1,
-        help="Number of instances per worker: variable SPARK_WORKER_INSTANCES. Not used if YARN " +
-             "is used as Hadoop major version (default: %default)")
-    parser.add_option(
-        "--master-opts", type="string", default="",
-        help="Extra options to give to master through SPARK_MASTER_OPTS variable " +
-             "(e.g -Dspark.worker.timeout=180)")
-    parser.add_option(
-        "--user-data", type="string", default="",
-        help="Path to a user-data file (most AMIs interpret this as an initialization script)")
     parser.add_option(
         "--authorized-address", type="string", default="0.0.0.0/0",
         help="Address to authorize on created security groups (default: %default)")
@@ -285,10 +122,7 @@ def parse_args():
     parser.add_option(
         "--additional-tags", type="string", default="",
         help="Additional tags to set on the machines; tags are comma-separated, while name and " +
-             "value are colon separated; ex: \"Task:MySparkProject,Env:production\"")
-    parser.add_option(
-        "--copy-aws-credentials", action="store_true", default=False,
-        help="Add AWS credentials to hadoop configuration to allow Spark to access S3")
+             "value are colon separated; ex: \"Task:MyProject,Env:production\"")
     parser.add_option(
         "--subnet-id", default=None,
         help="VPC subnet to launch instances in")
@@ -312,6 +146,7 @@ def parse_args():
         parser.print_help()
         sys.exit(1)
     (action, cluster_name) = args
+    opts.identity_file = os.path.expanduser(opts.identity_file)
 
     # Boto config check
     # http://boto.cloudhackers.com/en/latest/boto_config_tut.html
@@ -339,29 +174,7 @@ def get_or_make_group(conn, name, vpc_id):
         return group[0]
     else:
         print("Creating security group " + name)
-        return conn.create_security_group(name, "Spark EC2 group", vpc_id)
-
-
-def get_validate_spark_version(version, repo):
-    if "." in version:
-        version = version.replace("v", "")
-        if version not in VALID_SPARK_VERSIONS:
-            print("Don't know about Spark version: {v}".format(v=version), file=stderr)
-            sys.exit(1)
-        return version
-    else:
-        github_commit_url = "{repo}/commit/{commit_hash}".format(repo=repo, commit_hash=version)
-        request = Request(github_commit_url)
-        request.get_method = lambda: 'HEAD'
-        try:
-            response = urlopen(request)
-        except HTTPError as e:
-            print("Couldn't validate Spark commit: {url}".format(url=github_commit_url),
-                  file=stderr)
-            print("Received HTTP response code of {code}.".format(code=e.code), file=stderr)
-            sys.exit(1)
-        return version
-
+        return conn.create_security_group(name, "Ray EC2 group", vpc_id)
 
 # Source: http://aws.amazon.com/amazon-linux-ami/instance-type-matrix/
 # Last Updated: 2015-06-19
@@ -423,36 +236,6 @@ EC2_INSTANCE_TYPES = {
     "t2.large":    "hvm",
 }
 
-
-def get_tachyon_version(spark_version):
-    return SPARK_TACHYON_MAP.get(spark_version, "")
-
-
-# Attempt to resolve an appropriate AMI given the architecture and region of the request.
-def get_spark_ami(opts):
-    if opts.instance_type in EC2_INSTANCE_TYPES:
-        instance_type = EC2_INSTANCE_TYPES[opts.instance_type]
-    else:
-        instance_type = "pvm"
-        print("Don't recognize %s, assuming type is pvm" % opts.instance_type, file=stderr)
-
-    # URL prefix from which to fetch AMI information
-    ami_prefix = "{r}/{b}/ami-list".format(
-        r=opts.spark_ec2_git_repo.replace("https://github.com", "https://raw.github.com", 1),
-        b=opts.spark_ec2_git_branch)
-
-    ami_path = "%s/%s/%s" % (ami_prefix, opts.region, instance_type)
-    reader = codecs.getreader("ascii")
-    try:
-        ami = reader(urlopen(ami_path)).read().strip()
-    except:
-        print("Could not resolve AMI at: " + ami_path, file=stderr)
-        sys.exit(1)
-
-    print("Spark AMI: " + ami)
-    return ami
-
-
 # Launch a cluster of the given name, by setting up its security groups,
 # and then starting new instances in them.
 # Returns a tuple of EC2 reservation objects for the master and slaves
@@ -467,75 +250,19 @@ def launch_cluster(conn, opts, cluster_name):
         sys.exit(1)
 
     user_data_content = None
-    if opts.user_data:
-        with open(opts.user_data) as user_data_file:
-            user_data_content = user_data_file.read()
 
     print("Setting up security groups...")
     master_group = get_or_make_group(conn, cluster_name + "-master", opts.vpc_id)
     slave_group = get_or_make_group(conn, cluster_name + "-slaves", opts.vpc_id)
     authorized_address = opts.authorized_address
     if master_group.rules == []:  # Group was just now created
-        if opts.vpc_id is None:
-            master_group.authorize(src_group=master_group)
-            master_group.authorize(src_group=slave_group)
-        else:
-            master_group.authorize(ip_protocol='icmp', from_port=-1, to_port=-1,
-                                   src_group=master_group)
-            master_group.authorize(ip_protocol='tcp', from_port=0, to_port=65535,
-                                   src_group=master_group)
-            master_group.authorize(ip_protocol='udp', from_port=0, to_port=65535,
-                                   src_group=master_group)
-            master_group.authorize(ip_protocol='icmp', from_port=-1, to_port=-1,
-                                   src_group=slave_group)
-            master_group.authorize(ip_protocol='tcp', from_port=0, to_port=65535,
-                                   src_group=slave_group)
-            master_group.authorize(ip_protocol='udp', from_port=0, to_port=65535,
-                                   src_group=slave_group)
+        master_group.authorize(src_group=master_group)
+        master_group.authorize(src_group=slave_group)
         master_group.authorize('tcp', 22, 22, authorized_address)
-        master_group.authorize('tcp', 8080, 8081, authorized_address)
-        master_group.authorize('tcp', 18080, 18080, authorized_address)
-        master_group.authorize('tcp', 19999, 19999, authorized_address)
-        master_group.authorize('tcp', 50030, 50030, authorized_address)
-        master_group.authorize('tcp', 50070, 50070, authorized_address)
-        master_group.authorize('tcp', 60070, 60070, authorized_address)
-        master_group.authorize('tcp', 4040, 4045, authorized_address)
-        # Rstudio (GUI for R) needs port 8787 for web access
-        master_group.authorize('tcp', 8787, 8787, authorized_address)
-        # HDFS NFS gateway requires 111,2049,4242 for tcp & udp
-        master_group.authorize('tcp', 111, 111, authorized_address)
-        master_group.authorize('udp', 111, 111, authorized_address)
-        master_group.authorize('tcp', 2049, 2049, authorized_address)
-        master_group.authorize('udp', 2049, 2049, authorized_address)
-        master_group.authorize('tcp', 4242, 4242, authorized_address)
-        master_group.authorize('udp', 4242, 4242, authorized_address)
-        # RM in YARN mode uses 8088
-        master_group.authorize('tcp', 8088, 8088, authorized_address)
-        if opts.ganglia:
-            master_group.authorize('tcp', 5080, 5080, authorized_address)
     if slave_group.rules == []:  # Group was just now created
-        if opts.vpc_id is None:
-            slave_group.authorize(src_group=master_group)
-            slave_group.authorize(src_group=slave_group)
-        else:
-            slave_group.authorize(ip_protocol='icmp', from_port=-1, to_port=-1,
-                                  src_group=master_group)
-            slave_group.authorize(ip_protocol='tcp', from_port=0, to_port=65535,
-                                  src_group=master_group)
-            slave_group.authorize(ip_protocol='udp', from_port=0, to_port=65535,
-                                  src_group=master_group)
-            slave_group.authorize(ip_protocol='icmp', from_port=-1, to_port=-1,
-                                  src_group=slave_group)
-            slave_group.authorize(ip_protocol='tcp', from_port=0, to_port=65535,
-                                  src_group=slave_group)
-            slave_group.authorize(ip_protocol='udp', from_port=0, to_port=65535,
-                                  src_group=slave_group)
+        slave_group.authorize(src_group=master_group)
+        slave_group.authorize(src_group=slave_group)
         slave_group.authorize('tcp', 22, 22, authorized_address)
-        slave_group.authorize('tcp', 8080, 8081, authorized_address)
-        slave_group.authorize('tcp', 50060, 50060, authorized_address)
-        slave_group.authorize('tcp', 50075, 50075, authorized_address)
-        slave_group.authorize('tcp', 60060, 60060, authorized_address)
-        slave_group.authorize('tcp', 60075, 60075, authorized_address)
 
     # Check if instances are already running in our groups
     existing_masters, existing_slaves = get_existing_cluster(conn, opts, cluster_name,
@@ -545,9 +272,32 @@ def launch_cluster(conn, opts, cluster_name):
               (master_group.name, slave_group.name), file=stderr)
         sys.exit(1)
 
-    # Figure out Spark AMI
+    # Use the default Ubuntu AMI.
     if opts.ami is None:
-        opts.ami = get_spark_ami(opts)
+        if opts.region == "us-east-1":
+            opts.ami = "ami-2d39803a"
+        elif opts.region == "us-west-1":
+            opts.ami = "ami-06116566"
+        elif opts.region == "us-west-2":
+            opts.ami = "ami-9abea4fb"
+        elif opts.region == "eu-west-1":
+            opts.ami = "ami-f95ef58a"
+        elif opts.region == "eu-central-1":
+            opts.ami = "ami-87564feb"
+        elif opts.region == "ap-northeast-1":
+            opts.ami = "ami-a21529cc"
+        elif opts.region == "ap-northeast-2":
+            opts.ami = "ami-09dc1267"
+        elif opts.region == "ap-southeast-1":
+            opts.ami = "ami-25c00c46"
+        elif opts.region == "ap-southeast-2":
+            opts.ami = "ami-6c14310f"
+        elif opts.region == "ap-south-1":
+            opts.ami = "ami-4a90fa25"
+        elif opts.region == "sa-east-1":
+            opts.ami = "ami-0fb83963"
+        else:
+          raise Exception("The specified region is unknown.")
 
     # we use group ids to work around https://github.com/boto/boto/issues/350
     additional_group_ids = []
@@ -785,63 +535,6 @@ def setup_cluster(conn, master_nodes, slave_nodes, opts, deploy_ssh_key):
             print(slave_address)
             ssh_write(slave_address, opts, ['tar', 'x'], dot_ssh_tar)
 
-    modules = ['spark', 'ephemeral-hdfs', 'persistent-hdfs',
-               'mapreduce', 'spark-standalone', 'tachyon', 'rstudio']
-
-    if opts.hadoop_major_version == "1":
-        modules = list(filter(lambda x: x != "mapreduce", modules))
-
-    if opts.ganglia:
-        modules.append('ganglia')
-
-    # Clear SPARK_WORKER_INSTANCES if running on YARN
-    if opts.hadoop_major_version == "yarn":
-        opts.worker_instances = ""
-
-    # NOTE: We should clone the repository before running deploy_files to
-    # prevent ec2-variables.sh from being overwritten
-    print("Cloning spark-ec2 scripts from {r}/tree/{b} on master...".format(
-        r=opts.spark_ec2_git_repo, b=opts.spark_ec2_git_branch))
-    ssh(
-        host=master,
-        opts=opts,
-        command="rm -rf spark-ec2"
-        + " && "
-        + "git clone {r} -b {b} spark-ec2".format(r=opts.spark_ec2_git_repo,
-                                                  b=opts.spark_ec2_git_branch)
-    )
-
-    print("Deploying files to master...")
-    deploy_files(
-        conn=conn,
-        root_dir=SPARK_EC2_DIR + "/" + "deploy.generic",
-        opts=opts,
-        master_nodes=master_nodes,
-        slave_nodes=slave_nodes,
-        modules=modules
-    )
-
-    if opts.deploy_root_dir is not None:
-        print("Deploying {s} to master...".format(s=opts.deploy_root_dir))
-        deploy_user_files(
-            root_dir=opts.deploy_root_dir,
-            opts=opts,
-            master_nodes=master_nodes
-        )
-
-    print("Running setup on master...")
-    setup_spark_cluster(master, opts)
-    print("Done!")
-
-
-def setup_spark_cluster(master, opts):
-    ssh(master, opts, "chmod u+x spark-ec2/setup.sh")
-    ssh(master, opts, "spark-ec2/setup.sh")
-    print("Spark standalone cluster started at http://%s:8080" % master)
-
-    if opts.ganglia:
-        print("Ganglia started at http://%s:5080/ganglia" % master)
-
 
 def is_ssh_available(host, opts, print_ssh_output=True):
     """
@@ -1006,115 +699,6 @@ def get_num_disks(instance_type):
         return 1
 
 
-# Deploy the configuration file templates in a given local directory to
-# a cluster, filling in any template parameters with information about the
-# cluster (e.g. lists of masters and slaves). Files are only deployed to
-# the first master instance in the cluster, and we expect the setup
-# script to be run on that instance to copy them to other nodes.
-#
-# root_dir should be an absolute path to the directory with the files we want to deploy.
-def deploy_files(conn, root_dir, opts, master_nodes, slave_nodes, modules):
-    active_master = get_dns_name(master_nodes[0], opts.private_ips)
-
-    num_disks = get_num_disks(opts.instance_type)
-    hdfs_data_dirs = "/mnt/ephemeral-hdfs/data"
-    mapred_local_dirs = "/mnt/hadoop/mrlocal"
-    spark_local_dirs = "/mnt/spark"
-    if num_disks > 1:
-        for i in range(2, num_disks + 1):
-            hdfs_data_dirs += ",/mnt%d/ephemeral-hdfs/data" % i
-            mapred_local_dirs += ",/mnt%d/hadoop/mrlocal" % i
-            spark_local_dirs += ",/mnt%d/spark" % i
-
-    cluster_url = "%s:7077" % active_master
-
-    if "." in opts.spark_version:
-        # Pre-built Spark deploy
-        spark_v = get_validate_spark_version(opts.spark_version, opts.spark_git_repo)
-        tachyon_v = get_tachyon_version(spark_v)
-    else:
-        # Spark-only custom deploy
-        spark_v = "%s|%s" % (opts.spark_git_repo, opts.spark_version)
-        tachyon_v = ""
-        print("Deploying Spark via git hash; Tachyon won't be set up")
-        modules = filter(lambda x: x != "tachyon", modules)
-
-    master_addresses = [get_dns_name(i, opts.private_ips) for i in master_nodes]
-    slave_addresses = [get_dns_name(i, opts.private_ips) for i in slave_nodes]
-    worker_instances_str = "%d" % opts.worker_instances if opts.worker_instances else ""
-    template_vars = {
-        "master_list": '\n'.join(master_addresses),
-        "active_master": active_master,
-        "slave_list": '\n'.join(slave_addresses),
-        "cluster_url": cluster_url,
-        "hdfs_data_dirs": hdfs_data_dirs,
-        "mapred_local_dirs": mapred_local_dirs,
-        "spark_local_dirs": spark_local_dirs,
-        "swap": str(opts.swap),
-        "modules": '\n'.join(modules),
-        "spark_version": spark_v,
-        "tachyon_version": tachyon_v,
-        "hadoop_major_version": opts.hadoop_major_version,
-        "spark_worker_instances": worker_instances_str,
-        "spark_master_opts": opts.master_opts
-    }
-
-    if opts.copy_aws_credentials:
-        template_vars["aws_access_key_id"] = conn.aws_access_key_id
-        template_vars["aws_secret_access_key"] = conn.aws_secret_access_key
-    else:
-        template_vars["aws_access_key_id"] = ""
-        template_vars["aws_secret_access_key"] = ""
-
-    # Create a temp directory in which we will place all the files to be
-    # deployed after we substitue template parameters in them
-    tmp_dir = tempfile.mkdtemp()
-    for path, dirs, files in os.walk(root_dir):
-        if path.find(".svn") == -1:
-            dest_dir = os.path.join('/', path[len(root_dir):])
-            local_dir = tmp_dir + dest_dir
-            if not os.path.exists(local_dir):
-                os.makedirs(local_dir)
-            for filename in files:
-                if filename[0] not in '#.~' and filename[-1] != '~':
-                    dest_file = os.path.join(dest_dir, filename)
-                    local_file = tmp_dir + dest_file
-                    with open(os.path.join(path, filename)) as src:
-                        with open(local_file, "w") as dest:
-                            text = src.read()
-                            for key in template_vars:
-                                text = text.replace("{{" + key + "}}", template_vars[key])
-                            dest.write(text)
-                            dest.close()
-    # rsync the whole directory over to the master machine
-    command = [
-        'rsync', '-rv',
-        '-e', stringify_command(ssh_command(opts)),
-        "%s/" % tmp_dir,
-        "%s@%s:/" % (opts.user, active_master)
-    ]
-    subprocess.check_call(command)
-    # Remove the temp directory we created above
-    shutil.rmtree(tmp_dir)
-
-
-# Deploy a given local directory to a cluster, WITHOUT parameter substitution.
-# Note that unlike deploy_files, this works for binary files.
-# Also, it is up to the user to add (or not) the trailing slash in root_dir.
-# Files are only deployed to the first master instance in the cluster.
-#
-# root_dir should be an absolute path.
-def deploy_user_files(root_dir, opts, master_nodes):
-    active_master = get_dns_name(master_nodes[0], opts.private_ips)
-    command = [
-        'rsync', '-rv',
-        '-e', stringify_command(ssh_command(opts)),
-        "%s" % root_dir,
-        "%s@%s:/" % (opts.user, active_master)
-    ]
-    subprocess.check_call(command)
-
-
 def stringify_command(parts):
     if isinstance(parts, str):
         return parts
@@ -1234,21 +818,24 @@ def get_dns_name(instance, private_ips=False):
     return dns
 
 
+# Write the public and private ip addresses of the master and slave nodes to a file. This will be used by cluster.py.
+def write_public_and_private_ip_addresses_to_file(master_nodes, slave_nodes):
+    master_public_ip_address = master_nodes[0].ip_address
+    master_private_ip_address = master_nodes[0].private_ip_address
+    slave_public_ip_addresses = [node.ip_address for node in slave_nodes]
+    slave_private_ip_addresses = [node.private_ip_address for node in slave_nodes]
+    all_public_ip_addresses = [master_public_ip_address]
+    all_public_ip_addresses.extend(slave_public_ip_addresses)
+    all_private_ip_addresses = [master_private_ip_address]
+    all_private_ip_addresses.extend(slave_private_ip_addresses)
+
+    with open("nodes.txt", "w") as f:
+        for i in range(len(all_public_ip_addresses)):
+            f.write("{}, {}\n".format(all_public_ip_addresses[i], all_private_ip_addresses[i]))
+
+
 def real_main():
     (opts, action, cluster_name) = parse_args()
-
-    # Input parameter validation
-    get_validate_spark_version(opts.spark_version, opts.spark_git_repo)
-
-    if opts.wait is not None:
-        # NOTE: DeprecationWarnings are silent in 2.7+ by default.
-        #       To show them, run Python with the -Wdefault switch.
-        # See: https://docs.python.org/3.5/whatsnew/2.7.html
-        warnings.warn(
-            "This option is deprecated and has no effect. "
-            "spark-ec2 automatically waits as long as necessary for clusters to start up.",
-            DeprecationWarning
-        )
 
     if opts.identity_file is not None:
         if not os.path.exists(opts.identity_file):
@@ -1277,35 +864,13 @@ def real_main():
            opts.master_instance_type in EC2_INSTANCE_TYPES:
             if EC2_INSTANCE_TYPES[opts.instance_type] != \
                EC2_INSTANCE_TYPES[opts.master_instance_type]:
-                print("Error: spark-ec2 currently does not support having a master and slaves "
+                print("Error: this script currently does not support having a master and slaves "
                       "with different AMI virtualization types.", file=stderr)
                 print("master instance virtualization type: {t}".format(
                       t=EC2_INSTANCE_TYPES[opts.master_instance_type]), file=stderr)
                 print("slave instance virtualization type: {t}".format(
                       t=EC2_INSTANCE_TYPES[opts.instance_type]), file=stderr)
                 sys.exit(1)
-
-    if opts.ebs_vol_num > 8:
-        print("ebs-vol-num cannot be greater than 8", file=stderr)
-        sys.exit(1)
-
-    # Prevent breaking ami_prefix (/, .git and startswith checks)
-    # Prevent forks with non spark-ec2 names for now.
-    if opts.spark_ec2_git_repo.endswith("/") or \
-            opts.spark_ec2_git_repo.endswith(".git") or \
-            not opts.spark_ec2_git_repo.startswith("https://github.com") or \
-            not opts.spark_ec2_git_repo.endswith("spark-ec2"):
-        print("spark-ec2-git-repo must be a github repo and it must not have a trailing / or .git. "
-              "Furthermore, we currently only support forks named spark-ec2.", file=stderr)
-        sys.exit(1)
-
-    if not (opts.deploy_root_dir is None or
-            (os.path.isabs(opts.deploy_root_dir) and
-             os.path.isdir(opts.deploy_root_dir) and
-             os.path.exists(opts.deploy_root_dir))):
-        print("--deploy-root-dir must be an absolute path to a directory that exists "
-              "on the local file system", file=stderr)
-        sys.exit(1)
 
     try:
         if opts.profile is None:
@@ -1335,6 +900,9 @@ def real_main():
             cluster_state='ssh-ready'
         )
         setup_cluster(conn, master_nodes, slave_nodes, opts, True)
+
+        # Write the public and private ip addresses to a file.
+        write_public_and_private_ip_addresses_to_file(master_nodes, slave_nodes)
 
     elif action == "destroy":
         (master_nodes, slave_nodes) = get_existing_cluster(
@@ -1404,19 +972,6 @@ def real_main():
                 if not success:
                     print("Failed to delete all security groups after 3 tries.")
                     print("Try re-running in a few minutes.")
-
-    elif action == "login":
-        (master_nodes, slave_nodes) = get_existing_cluster(conn, opts, cluster_name)
-        if not master_nodes[0].public_dns_name and not opts.private_ips:
-            print("Master has no public DNS name.  Maybe you meant to specify --private-ips?")
-        else:
-            master = get_dns_name(master_nodes[0], opts.private_ips)
-            print("Logging into master " + master + "...")
-            proxy_opt = []
-            if opts.proxy_port is not None:
-                proxy_opt = ['-D', opts.proxy_port]
-            subprocess.check_call(
-                ssh_command(opts) + proxy_opt + ['-t', '-t', "%s@%s" % (opts.user, master)])
 
     elif action == "reboot-slaves":
         response = raw_input(
@@ -1490,6 +1045,9 @@ def real_main():
         opts.instance_type = existing_slave_type
 
         setup_cluster(conn, master_nodes, slave_nodes, opts, False)
+
+        # Write the public and private ip addresses to a file.
+        write_public_and_private_ip_addresses_to_file(master_nodes, slave_nodes)
 
     else:
         print("Invalid action: %s" % action, file=stderr)
