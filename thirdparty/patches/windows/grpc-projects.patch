@@ -78,7 +78,7 @@ index 1bdc071..87a4bf4
 +</Project>
 \ No newline at end of file
 diff --git a/vsprojects/vcxproj/gpr/gpr.vcxproj b/vsprojects/vcxproj/gpr/gpr.vcxproj
-index db8594e..623f3d5
+index db8594e..d2ddaff
 --- a/vsprojects/vcxproj/gpr/gpr.vcxproj
 +++ b/vsprojects/vcxproj/gpr/gpr.vcxproj
 @@ -21,7 +21,6 @@
@@ -89,7 +89,15 @@ index db8594e..623f3d5
    </PropertyGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
    <PropertyGroup Condition="'$(VisualStudioVersion)' == '10.0'" Label="Configuration">
-@@ -52,16 +51,10 @@
+@@ -44,7 +43,6 @@
+   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseDebugLibraries>false</UseDebugLibraries>
+-    <WholeProgramOptimization>true</WholeProgramOptimization>
+     <CharacterSet>Unicode</CharacterSet>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -52,16 +50,10 @@
    </ImportGroup>
    <ImportGroup Label="PropertySheets">
      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -108,7 +116,7 @@ index db8594e..623f3d5
      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
      <ClCompile>
        <PrecompiledHeader>NotUsing</PrecompiledHeader>
-@@ -69,7 +62,6 @@
+@@ -69,7 +61,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -116,7 +124,7 @@ index db8594e..623f3d5
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -88,7 +80,6 @@
+@@ -88,7 +79,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -124,7 +132,7 @@ index db8594e..623f3d5
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -109,7 +100,6 @@
+@@ -109,7 +99,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -132,7 +140,7 @@ index db8594e..623f3d5
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -132,7 +122,6 @@
+@@ -132,7 +121,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -140,7 +148,7 @@ index db8594e..623f3d5
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -147,152 +136,152 @@
+@@ -147,152 +135,152 @@
    </ItemDefinitionGroup>
  
    <ItemGroup>
@@ -797,7 +805,7 @@ index 9bab373..d13e9c4
      </ClInclude>
    </ItemGroup>
 diff --git a/vsprojects/vcxproj/grpc++/grpc++.vcxproj b/vsprojects/vcxproj/grpc++/grpc++.vcxproj
-index cb9e41e..7d500a8
+index cb9e41e..f3b8b27
 --- a/vsprojects/vcxproj/grpc++/grpc++.vcxproj
 +++ b/vsprojects/vcxproj/grpc++/grpc++.vcxproj
 @@ -37,7 +37,6 @@
@@ -808,7 +816,23 @@ index cb9e41e..7d500a8
    </PropertyGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
    <PropertyGroup Condition="'$(VisualStudioVersion)' == '10.0'" Label="Configuration">
-@@ -79,16 +78,10 @@
+@@ -60,7 +59,6 @@
+   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseDebugLibraries>false</UseDebugLibraries>
+-    <WholeProgramOptimization>true</WholeProgramOptimization>
+     <CharacterSet>Unicode</CharacterSet>
+   </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)'=='Debug-DLL'" Label="Configuration">
+@@ -71,7 +69,6 @@
+   <PropertyGroup Condition="'$(Configuration)'=='Release-DLL'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseDebugLibraries>false</UseDebugLibraries>
+-    <WholeProgramOptimization>true</WholeProgramOptimization>
+     <CharacterSet>Unicode</CharacterSet>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -79,16 +76,10 @@
    </ImportGroup>
    <ImportGroup Label="PropertySheets">
      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -827,7 +851,7 @@ index cb9e41e..7d500a8
      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug-DLL|Win32'">
      <ClCompile>
        <PrecompiledHeader>NotUsing</PrecompiledHeader>
-@@ -96,7 +89,6 @@
+@@ -96,7 +87,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -835,7 +859,7 @@ index cb9e41e..7d500a8
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -115,7 +107,6 @@
+@@ -115,7 +105,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -843,7 +867,7 @@ index cb9e41e..7d500a8
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -136,7 +127,6 @@
+@@ -136,7 +125,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -851,7 +875,7 @@ index cb9e41e..7d500a8
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -159,7 +149,6 @@
+@@ -159,7 +147,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -859,7 +883,7 @@ index cb9e41e..7d500a8
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -180,7 +169,6 @@
+@@ -180,7 +167,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -867,7 +891,7 @@ index cb9e41e..7d500a8
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -199,7 +187,6 @@
+@@ -199,7 +185,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -875,7 +899,7 @@ index cb9e41e..7d500a8
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -220,7 +207,6 @@
+@@ -220,7 +205,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -883,7 +907,7 @@ index cb9e41e..7d500a8
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -243,7 +229,6 @@
+@@ -243,7 +227,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -891,7 +915,7 @@ index cb9e41e..7d500a8
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -258,184 +243,187 @@
+@@ -258,184 +241,187 @@
    </ItemDefinitionGroup>
  
    <ItemGroup>
@@ -1794,7 +1818,7 @@ index a905118..cfea49a
 +</Project>
 \ No newline at end of file
 diff --git a/vsprojects/vcxproj/grpc/grpc.vcxproj b/vsprojects/vcxproj/grpc/grpc.vcxproj
-index a9e96da..8aa0c2e
+index a9e96da..d95a974
 --- a/vsprojects/vcxproj/grpc/grpc.vcxproj
 +++ b/vsprojects/vcxproj/grpc/grpc.vcxproj
 @@ -1,6 +1,6 @@
@@ -1813,7 +1837,23 @@ index a9e96da..8aa0c2e
    </PropertyGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
    <PropertyGroup Condition="'$(VisualStudioVersion)' == '10.0'" Label="Configuration">
-@@ -80,19 +79,17 @@
+@@ -61,7 +60,6 @@
+   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseDebugLibraries>false</UseDebugLibraries>
+-    <WholeProgramOptimization>true</WholeProgramOptimization>
+     <CharacterSet>Unicode</CharacterSet>
+   </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)'=='Debug-DLL'" Label="Configuration">
+@@ -72,7 +70,6 @@
+   <PropertyGroup Condition="'$(Configuration)'=='Release-DLL'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseDebugLibraries>false</UseDebugLibraries>
+-    <WholeProgramOptimization>true</WholeProgramOptimization>
+     <CharacterSet>Unicode</CharacterSet>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -80,19 +77,17 @@
    </ImportGroup>
    <ImportGroup Label="PropertySheets">
      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -1835,7 +1875,7 @@ index a9e96da..8aa0c2e
      <Linkage-grpc_dependencies_zlib>static</Linkage-grpc_dependencies_zlib>
      <Configuration-grpc_dependencies_zlib>Release</Configuration-grpc_dependencies_zlib>
      <Linkage-grpc_dependencies_openssl>static</Linkage-grpc_dependencies_openssl>
-@@ -105,7 +102,6 @@
+@@ -105,7 +100,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -1843,7 +1883,7 @@ index a9e96da..8aa0c2e
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -124,7 +120,6 @@
+@@ -124,7 +118,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -1851,7 +1891,7 @@ index a9e96da..8aa0c2e
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -145,7 +140,6 @@
+@@ -145,7 +138,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -1859,7 +1899,7 @@ index a9e96da..8aa0c2e
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -168,7 +162,6 @@
+@@ -168,7 +160,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -1867,7 +1907,7 @@ index a9e96da..8aa0c2e
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -189,7 +182,6 @@
+@@ -189,7 +180,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -1875,7 +1915,7 @@ index a9e96da..8aa0c2e
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -208,7 +200,6 @@
+@@ -208,7 +198,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -1883,7 +1923,7 @@ index a9e96da..8aa0c2e
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -229,7 +220,6 @@
+@@ -229,7 +218,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -1891,7 +1931,7 @@ index a9e96da..8aa0c2e
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -252,7 +242,6 @@
+@@ -252,7 +240,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -1899,7 +1939,7 @@ index a9e96da..8aa0c2e
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -267,570 +256,570 @@
+@@ -267,570 +254,570 @@
    </ItemDefinitionGroup>
  
    <ItemGroup>
@@ -2842,7 +2882,7 @@ index a9e96da..8aa0c2e
        <Project>{B23D3D1A-9438-4EDA-BEB6-9A0A03D17792}</Project>
      </ProjectReference>
    </ItemGroup>
-@@ -839,20 +828,20 @@
+@@ -839,20 +826,20 @@
    </ItemGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
    <ImportGroup Label="ExtensionTargets">
@@ -4379,7 +4419,7 @@ index be77e53..ba69b28
  </Project>
  
 diff --git a/vsprojects/vcxproj/grpc_cpp_plugin/grpc_cpp_plugin.vcxproj b/vsprojects/vcxproj/grpc_cpp_plugin/grpc_cpp_plugin.vcxproj
-index a521414..1779af5
+index a521414..5415b24
 --- a/vsprojects/vcxproj/grpc_cpp_plugin/grpc_cpp_plugin.vcxproj
 +++ b/vsprojects/vcxproj/grpc_cpp_plugin/grpc_cpp_plugin.vcxproj
 @@ -21,7 +21,6 @@
@@ -4390,7 +4430,15 @@ index a521414..1779af5
    </PropertyGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
    <PropertyGroup Condition="'$(VisualStudioVersion)' == '10.0'" Label="Configuration">
-@@ -52,17 +51,11 @@
+@@ -44,7 +43,6 @@
+   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+     <ConfigurationType>Application</ConfigurationType>
+     <UseDebugLibraries>false</UseDebugLibraries>
+-    <WholeProgramOptimization>true</WholeProgramOptimization>
+     <CharacterSet>Unicode</CharacterSet>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -52,17 +50,11 @@
    </ImportGroup>
    <ImportGroup Label="PropertySheets">
      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -4411,7 +4459,7 @@ index a521414..1779af5
      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
      <ClCompile>
        <PrecompiledHeader>NotUsing</PrecompiledHeader>
-@@ -70,7 +63,6 @@
+@@ -70,7 +62,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -4419,7 +4467,7 @@ index a521414..1779af5
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -89,7 +81,6 @@
+@@ -89,7 +80,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -4427,7 +4475,7 @@ index a521414..1779af5
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -110,7 +101,6 @@
+@@ -110,7 +100,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -4435,7 +4483,7 @@ index a521414..1779af5
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -133,7 +123,6 @@
+@@ -133,7 +122,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -4443,7 +4491,7 @@ index a521414..1779af5
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -148,13 +137,16 @@
+@@ -148,13 +136,16 @@
    </ItemDefinitionGroup>
  
    <ItemGroup>
@@ -4476,7 +4524,7 @@ index 421c308..bfa41be
      </ClCompile>
    </ItemGroup>
 diff --git a/vsprojects/vcxproj/grpc_plugin_support/grpc_plugin_support.vcxproj b/vsprojects/vcxproj/grpc_plugin_support/grpc_plugin_support.vcxproj
-index 9828b8b..ac30116
+index 9828b8b..bc4716b
 --- a/vsprojects/vcxproj/grpc_plugin_support/grpc_plugin_support.vcxproj
 +++ b/vsprojects/vcxproj/grpc_plugin_support/grpc_plugin_support.vcxproj
 @@ -21,7 +21,6 @@
@@ -4487,7 +4535,15 @@ index 9828b8b..ac30116
    </PropertyGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
    <PropertyGroup Condition="'$(VisualStudioVersion)' == '10.0'" Label="Configuration">
-@@ -52,17 +51,11 @@
+@@ -44,7 +43,6 @@
+   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseDebugLibraries>false</UseDebugLibraries>
+-    <WholeProgramOptimization>true</WholeProgramOptimization>
+     <CharacterSet>Unicode</CharacterSet>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -52,17 +50,11 @@
    </ImportGroup>
    <ImportGroup Label="PropertySheets">
      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -4508,7 +4564,7 @@ index 9828b8b..ac30116
      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
      <ClCompile>
        <PrecompiledHeader>NotUsing</PrecompiledHeader>
-@@ -70,7 +63,6 @@
+@@ -70,7 +62,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -4516,7 +4572,7 @@ index 9828b8b..ac30116
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -89,7 +81,6 @@
+@@ -89,7 +80,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -4524,7 +4580,7 @@ index 9828b8b..ac30116
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -110,7 +101,6 @@
+@@ -110,7 +100,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -4532,7 +4588,7 @@ index 9828b8b..ac30116
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -133,7 +123,6 @@
+@@ -133,7 +122,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -4540,7 +4596,7 @@ index 9828b8b..ac30116
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -148,37 +137,37 @@
+@@ -148,37 +136,37 @@
    </ItemDefinitionGroup>
  
    <ItemGroup>
@@ -4703,7 +4759,7 @@ index 27eb935..207944a
      </ClInclude>
    </ItemGroup>
 diff --git a/vsprojects/vcxproj/z/z.vcxproj b/vsprojects/vcxproj/z/z.vcxproj
-index 4505dfa..8ad76d1
+index 4505dfa..92b378d
 --- a/vsprojects/vcxproj/z/z.vcxproj
 +++ b/vsprojects/vcxproj/z/z.vcxproj
 @@ -21,7 +21,6 @@
@@ -4714,7 +4770,15 @@ index 4505dfa..8ad76d1
    </PropertyGroup>
    <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
    <PropertyGroup Condition="'$(VisualStudioVersion)' == '10.0'" Label="Configuration">
-@@ -52,16 +51,10 @@
+@@ -44,7 +43,6 @@
+   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+     <ConfigurationType>StaticLibrary</ConfigurationType>
+     <UseDebugLibraries>false</UseDebugLibraries>
+-    <WholeProgramOptimization>true</WholeProgramOptimization>
+     <CharacterSet>Unicode</CharacterSet>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+@@ -52,16 +50,10 @@
    </ImportGroup>
    <ImportGroup Label="PropertySheets">
      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -4733,7 +4797,7 @@ index 4505dfa..8ad76d1
      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
      <ClCompile>
        <PrecompiledHeader>NotUsing</PrecompiledHeader>
-@@ -69,7 +62,6 @@
+@@ -69,7 +61,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -4741,7 +4805,7 @@ index 4505dfa..8ad76d1
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -88,7 +80,6 @@
+@@ -88,7 +79,6 @@
        <Optimization>Disabled</Optimization>
        <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
@@ -4749,7 +4813,7 @@ index 4505dfa..8ad76d1
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -109,7 +100,6 @@
+@@ -109,7 +99,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -4757,7 +4821,7 @@ index 4505dfa..8ad76d1
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -132,7 +122,6 @@
+@@ -132,7 +121,6 @@
        <FunctionLevelLinking>true</FunctionLevelLinking>
        <IntrinsicFunctions>true</IntrinsicFunctions>
        <SDLCheck>true</SDLCheck>
@@ -4765,7 +4829,7 @@ index 4505dfa..8ad76d1
        <TreatWarningAsError>true</TreatWarningAsError>
        <DebugInformationFormat Condition="$(Jenkins)">None</DebugInformationFormat>
        <MinimalRebuild Condition="$(Jenkins)">false</MinimalRebuild>
-@@ -147,48 +136,48 @@
+@@ -147,48 +135,48 @@
    </ItemDefinitionGroup>
  
    <ItemGroup>
