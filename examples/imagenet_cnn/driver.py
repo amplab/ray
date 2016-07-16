@@ -33,9 +33,9 @@ objects = imagenet_bucket.objects.filter(Prefix=args.key_prefix)
 images = [obj.key for obj in objects.all()]
 
 imagenet = ray.get(imagenet.load_tarfiles_from_s3(args.s3_bucket, map(str, images), [256, 256]))
+meanref = functions.compute_mean_image(imagenet)
 print imagenet
 X = map(lambda img: img[0], imagenet)
-
 s5 = boto3.client("s3")
 labels = s5.get_object(Bucket=args.s3_bucket, Key=args.label_file)
 lines = labels["Body"].read().split("\n")
@@ -67,7 +67,7 @@ while True:
   print "Weightrefs created"
   for i in range(num_workers):
     functions.update_weights(*weightrefs)
-  if (batchnum % 10 == 0):
+  if (batchnum % 100 == 0):
     temp = random.choice(batches)
     xref = temp[0]
     yref = temp[1]
@@ -77,7 +77,7 @@ while True:
     curbatch = random.choice(batches)
     xref = curbatch[0]
     yref = curbatch[1]
-    results.append(functions.compute_grad(xref, yref))
+    results.append(functions.compute_grad(xref, yref, meanref))
   print "Grads recieved"
   actualresult = map(lambda x: map(ray.get, x), results)
   grads = [np.asarray([gradset[i] for gradset in actualresult]) for i in range(16)] # 16 gradients, one for each variable

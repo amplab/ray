@@ -1,8 +1,23 @@
 import tensorflow as tf
 import numpy as np
 import ray
+import ray.array.remote as ra
 
-from typing import Tuple
+from typing import Tuple, List
+
+@ray.remote([List[Tuple[ray.ObjRef, ray.ObjRef]]], [int])
+def num_images(batches):
+  shape_refs = [ra.shape(batch[0]) for batch in batches]
+  return sum([ray.get(shape_ref)[0] for shape_ref in shape_refs])
+
+@ray.remote([List[Tuple[ray.ObjRef, ray.ObjRef]]], [np.ndarray])
+def compute_mean_image(batches):
+  if len(batches) == 0:
+    raise Exception("No images were passed into `compute_mean_image`.")
+  sum_image_refs = [ra.sum(batch[0], axis=0) for batch in batches]
+  sum_images = [ray.get(ref) for ref in sum_image_refs]
+  n_images = num_images(batches)
+  return np.sum(sum_images, axis=0).astype("float64") / ray.get(n_images)
 
 @ray.remote([np.ndarray, np.ndarray, np.ndarray, np.ndarray], [np.ndarray, np.ndarray])
 def shufflearrays(images1, labels1, images2, labels2):
@@ -43,8 +58,8 @@ def update_weights(*weight):
   feed_dict = dict(zip(placeholders, weight))
   sess.run(assignment, feed_dict=feed_dict)
 
-@ray.remote([np.ndarray, np.ndarray], 16 * [np.ndarray])
-def compute_grad(X, Y):
+@ray.remote([np.ndarray, np.ndarray, np.ndarray], 16 * [np.ndarray])
+def compute_grad(X, Y, mean):
   """
   Computes the gradient of the network.
 
@@ -52,8 +67,8 @@ def compute_grad(X, Y):
   :param Y:Labels corresponding to each image
   :rtype: List of gradients for each variable
   """
-  randindices = np.random.randint(0, len(X), size=[20])
-  subX = map(lambda ind:X[ind], randindices)
+  randindices = np.random.randint(0, len(X), size=[128])
+  subX = map(lambda ind:X[ind], randindices) - mean
   subY = np.asarray(map(lambda ind:one_hot(Y[ind]), randindices))
   croppedX = np.asarray(map(cropimage, subX))
   return sess.run([g for (g,v) in compgrads], feed_dict={images:croppedX, y_true:subY, dropout:0.5})
@@ -198,7 +213,7 @@ y_pred = tf.clip_by_value(y_pred, tf.cast(1e-10, dtype=tf.float32),
 cross_entropy = tf.reduce_mean(-tf.reduce_sum(y_true * tf.log(y_pred),
                                 reduction_indices=len(y_pred.get_shape()) - 1))
 #opt =  tf.train.MomentumOptimizer(learning_rate=0.001, momentum=0.9)
-opt = tf.train.MomentumOptimizer(learning_rate=0.001, momentum=0.9) # Any other optimizier can be placed here
+opt = tf.train.MomentumOptimizer(learning_rate=0.01, momentum=0.9) # Any other optimizier can be placed here
 correct_pred = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y_true, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 

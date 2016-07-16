@@ -2,7 +2,7 @@ import argparse
 import ray
 import ray.worker as worker
 import imagenet
-
+import ray.array.remote as ra
 import functions
 
 parser = argparse.ArgumentParser(description="Parse addresses for the worker to connect to.")
@@ -15,4 +15,5 @@ if __name__ == "__main__":
   ray.connect(args.scheduler_address, args.objstore_address, args.worker_address)
   ray.register_module(functions)
   ray.register_module(imagenet)
+  ray.register_module(ra)
   worker.main_loop()
