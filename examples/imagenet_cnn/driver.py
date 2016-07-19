@@ -6,13 +6,12 @@ import tensorflow as tf
 import imagenet
 import argparse
 import boto3
-import re
 import random
 
 import functions
 
 
-
+numofshuffles = 5
 num_workers = 3
 batchnum = 0
 weights = []
@@ -34,37 +33,31 @@ images = [obj.key for obj in objects.all()]
 
 imagenet = ray.get(imagenet.load_tarfiles_from_s3(args.s3_bucket, map(str, images), [256, 256]))
 meanref = functions.compute_mean_image(imagenet)
-print imagenet
 X = map(lambda img: img[0], imagenet)
-s5 = boto3.client("s3")
+s3 = boto3.client("s3")
 labels = s5.get_object(Bucket=args.s3_bucket, Key=args.label_file)
 lines = labels["Body"].read().split("\n")
-print "lines\n"
 imagepairs = map(lambda line: line.split(" ", 2), lines)
-imagepairs = ray.put(dict(map(lambda tup: (re.sub("(.+)/(.+)", r"\2", tup[0]), tup[-1]), imagepairs)))
-print "pairs\n"
+imagepairs = ray.put(dict(map(lambda tup: (os.path.basename(tup[0]), tup[-1]), imagepairs)))
 imagenames = map(lambda img: img[1], imagenet)
-print "names"
 Y = map(lambda x: functions.convert(x, imagepairs), imagenames)
-print map(ray.get, Y)[0]
 batches = zip(X,Y)
-for i in range(5):
+for i in range(numofshuffles):
   newshuffle = np.random.permutation(batches)
   batches = map(lambda tup:ray.get(functions.shufflestuples(tup)), zip(newshuffle,batches))
   print ray.get(batches[0][1])
-print "Imagenet downloaded"
+print("Imagenet downloaded")
 for placeholder in functions.placeholders:
   weights.append(np.random.normal(scale = 1e-1, size=placeholder.get_shape()))
-print "weights inited"
 functions.sess.run(functions.assignment, feed_dict=dict(zip(functions.placeholders, weights)))
-print "Weights passed"
+print("Weights passed")
 while True:
   results = []
-  print "Start of loop"
+  print("Start of loop")
   weights = functions.sess.run(functions.parameters)
-  print "Weights recieved"
+  print("Weights recieved")
   weightrefs = map(ray.put, weights)
-  print "Weightrefs created"
+  print("Weightrefs created")
   for i in range(num_workers):
     functions.update_weights(*weightrefs)
   if (batchnum % 100 == 0):
@@ -72,13 +65,13 @@ while True:
     xref = temp[0]
     yref = temp[1]
     print ray.get(functions.print_accuracy(xref, yref))
-  print "Workers updated"
+  print("Workers updated")
   for i in range(num_workers):
     curbatch = random.choice(batches)
     xref = curbatch[0]
     yref = curbatch[1]
     results.append(functions.compute_grad(xref, yref, meanref))
-  print "Grads recieved"
+  print("Grad references recieved")
   actualresult = map(lambda x: map(ray.get, x), results)
   grads = [np.asarray([gradset[i] for gradset in actualresult]) for i in range(16)] # 16 gradients, one for each variable
   gradientvalues = map(lambda x: np.mean(x, axis=0), grads) # Taking mean over all the samples

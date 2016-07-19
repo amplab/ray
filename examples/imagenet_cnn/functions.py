@@ -7,11 +7,30 @@ from typing import Tuple, List
 
 @ray.remote([List[Tuple[ray.ObjRef, ray.ObjRef]]], [int])
 def num_images(batches):
+  """
+  Counts number of images in batches.
+  
+  Args:
+    batches (List): Collection of batches of images and labels.
+  
+  Returns:
+    int: The number of images
+  """
   shape_refs = [ra.shape(batch[0]) for batch in batches]
   return sum([ray.get(shape_ref)[0] for shape_ref in shape_refs])
 
 @ray.remote([List[Tuple[ray.ObjRef, ray.ObjRef]]], [np.ndarray])
 def compute_mean_image(batches):
+  """
+  Computes the mean of images in batches.
+  
+  Args:
+    batches (List): Collection of batches of images and labels.
+  
+  Returns:
+    ndarray: The mean image
+  """
+
   if len(batches) == 0:
     raise Exception("No images were passed into `compute_mean_image`.")
   sum_image_refs = [ra.sum(batch[0], axis=0) for batch in batches]
@@ -21,6 +40,19 @@ def compute_mean_image(batches):
 
 @ray.remote([np.ndarray, np.ndarray, np.ndarray, np.ndarray], [np.ndarray, np.ndarray])
 def shufflearrays(images1, labels1, images2, labels2):
+  """
+  Shuffles the data of two batches, return random samples the same size of the first batch.
+  
+  Args:
+    images1 (ndarray): Images of first batch
+    labels1 (ndarray): Labels of first batch
+    images2 (ndarray): Images of second batch
+    labels2 (ndarray): Labels of second batch
+  
+  Returns:
+    ndarray: Shuffled images for first batch
+    ndarray: Shuffled images for first batch
+  """
   toshuffle = zip(images1, labels1) + zip(images2, labels2)
   np.random.shuffle(toshuffle)
   length = len(images1)
@@ -30,18 +62,54 @@ def shufflearrays(images1, labels1, images2, labels2):
 
 @ray.remote([Tuple[Tuple, Tuple]], [list])
 def shufflestuples(zippedimages):
+  """
+  Function that calls shufflearrays in order to properly serialize the data.
+
+  Args:
+    zippedimages (tuple): Two batchs in the form of tuples
+  
+  Returns:
+    list: Shuffled images and labels.
+  """
   return shufflearrays(zippedimages[0][0], zippedimages[0][1], zippedimages[1][0], zippedimages[1][1])
 
 @ray.remote([list, dict], [np.ndarray])
 def convert(imglist, imagepairs):
+  """
+  Converts filename strings to integer labels.
+  
+  Args:
+    imglist (List): Filenames
+    imagepairs (dict): Lookup table for filenames
+  Returns:
+    ndarray: Integer labels
+  """
   return np.asarray(map(lambda imgname:int(imagepairs[imgname]), imglist))
 
 def one_hot(x):
+  """
+  Converts integer labels to one hot vectors.
+  
+  Args:
+    x (int): Index to be set to one
+
+  Returns:
+    ndarray: One hot vector.
+  """
   zero = np.zeros([1000])
   zero[x] = 1.0
   return zero
 
 def cropimage(img):
+  """
+  Crops an input image to prove more training for the network.
+  
+  Args:
+    img (ndarray): Image to be cropped
+
+  Returns:
+    ndarray: Cropped image
+  """
   cropx = np.random.randint(0,31)
   cropy = np.random.randint(0,31)
   return img[cropx:(cropx+224),cropy:(cropy+224)]
@@ -52,8 +120,11 @@ def update_weights(*weight):
   """
   Updates the weights on a worker
 
-  :param weight: Variable number of weights to be applied to the network
-  :rtype: None
+  Args: 
+    weight: Variable number of weights to be applied to the network
+  
+  Returns: 
+    None
   """
   feed_dict = dict(zip(placeholders, weight))
   sess.run(assignment, feed_dict=feed_dict)
@@ -63,9 +134,13 @@ def compute_grad(X, Y, mean):
   """
   Computes the gradient of the network.
 
-  :param X:Numpy array of images in the form of [224,224,3]
-  :param Y:Labels corresponding to each image
-  :rtype: List of gradients for each variable
+  Args:
+    X (ndarray): Numpy array of images in the form of [224,224,3]
+    Y (ndarray): Labels corresponding to each image
+    mean (ndarray): Mean image to substract from each image for additional training
+
+  Returns: 
+    List of gradients for each variable
   """
   randindices = np.random.randint(0, len(X), size=[128])
   subX = map(lambda ind:X[ind], randindices) - mean
@@ -77,9 +152,13 @@ def compute_grad(X, Y, mean):
 def print_accuracy(X, Y):
   """
   Prints the accuracy of the network
-  :param X: Numpy array for input images
-  :param Y: Numpy array for labels
-  :rtype: None
+  
+  Args:
+    X: Numpy array for input images
+    Y: Numpy array for labels
+  
+  Returns: 
+    None
   """
   one_hot_Y = np.asarray(map(one_hot, Y))
   croppedX = np.asarray(map(cropimage, X))
@@ -89,12 +168,15 @@ def setup_variables(params, placeholders, assigns, kernelshape, biasshape):
   """
   Creates the variables for each layer and adds the variables and the components needed to feed them to various lists
   
-  :param params: List of network parameters used for creating feed_dicts
-  :param placeholders: List of placeholders used for feeding weights into
-  :param assigns: List of assignments used for actually setting variables
-  :param kernelshape:Shape of the kernel used for the conv layer
-  :param biasshape:Shape of the bias used
-  :rtype: None
+  Args:
+    params (List): Network parameters used for creating feed_dicts
+    placeholders (List): Placeholders used for feeding weights into
+    assigns (List): Assignments used for actually setting variables
+    kernelshape (List): Shape of the kernel used for the conv layer
+    biasshape (List):Shape of the bias used
+  
+  Returns: 
+    None
   """
   kernel = tf.Variable(tf.zeros(kernelshape, dtype=tf.float32))
   biases = tf.Variable(tf.constant(0.0, shape=biasshape, dtype=tf.float32),
@@ -110,11 +192,14 @@ def setup_variables(params, placeholders, assigns, kernelshape, biasshape):
 def conv_layer(prevlayer, shape, scope):
   """
   Constructs a convolutional layer for the network.
- 
-  :param prevlayer: The previous layer to connect the network together.
-  :param shape: The strides used for convolution
-  :param scope: Current scope of tensorflow
-  :rtype: Tensor, Activation of layer
+
+  Args:
+    prevlayer (Tensor): The previous layer to connect the network together.
+    shape (List): The strides used for convolution
+    scope (Scope): Current scope of tensorflow
+
+  Returns:
+    Tensor: Activation of layer
   """
   kernel = parameters[-2]
   bias = parameters[-1]
