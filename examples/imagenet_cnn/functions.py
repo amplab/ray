@@ -7,8 +7,7 @@ from typing import Tuple, List
 
 @ray.remote([List[Tuple[ray.ObjRef, ray.ObjRef]]], [int])
 def num_images(batches):
-  """
-  Counts number of images in batches.
+  """Counts number of images in batches.
   
   Args:
     batches (List): Collection of batches of images and labels.
@@ -21,8 +20,7 @@ def num_images(batches):
 
 @ray.remote([List[Tuple[ray.ObjRef, ray.ObjRef]]], [np.ndarray])
 def compute_mean_image(batches):
-  """
-  Computes the mean of images in batches.
+  """Computes the mean of images in batches.
   
   Args:
     batches (List): Collection of batches of images and labels.
@@ -38,10 +36,9 @@ def compute_mean_image(batches):
   n_images = num_images(batches)
   return np.sum(sum_images, axis=0).astype("float64") / ray.get(n_images)
 
-@ray.remote([np.ndarray, np.ndarray, np.ndarray, np.ndarray], [np.ndarray, np.ndarray])
-def shufflearrays(images1, labels1, images2, labels2):
-  """
-  Shuffles the data of two batches, return random samples the same size of the first batch.
+@ray.remote([np.ndarray, np.ndarray, np.ndarray, np.ndarray], [np.ndarray, np.ndarray, np.ndarray, np.ndarray])
+def shuffle_arrays(images1, labels1, images2, labels2):
+  """Shuffles the data of two batches.
   
   Args:
     images1 (ndarray): Images of first batch
@@ -51,32 +48,38 @@ def shufflearrays(images1, labels1, images2, labels2):
   
   Returns:
     ndarray: Shuffled images for first batch
-    ndarray: Shuffled images for first batch
+    ndarray: Shuffled labels for first batch
+    ndarray: Shuffled images for second batch
+    ndarray: Shuffled labels for second batch
   """
-  toshuffle = zip(images1, labels1) + zip(images2, labels2)
-  np.random.shuffle(toshuffle)
+  to_shuffle = zip(images1, labels1) + zip(images2, labels2)
+  np.random.shuffle(to_shuffle)
   length = len(images1)
-  firstref = zip(*toshuffle[0:length])
-  shuffledarray = map(np.asarray, firstref)
-  return shuffledarray[0], shuffledarray[1]
+  first_batch = zip(*to_shuffle[0:length])
+  first_array = map(np.asarray, first_batch)
+  second_batch = zip(*to_shuffle[length:len(to_shuffle)])
+  second_array = map(np.asarray, second_batch)
+  return first_array[0], first_array[1], second_array[0], second_array[1]
 
-@ray.remote([Tuple[Tuple, Tuple]], [list])
-def shufflestuples(zippedimages):
-  """
-  Function that calls shufflearrays in order to properly serialize the data.
+@ray.remote([Tuple, Tuple], [Tuple])
+def shuffles_tuples(first_batch, second_batch):
+  """Calls shufflearrays in order to properly serialize the data.
 
   Args:
-    zippedimages (tuple): Two batchs in the form of tuples
+    first_batch (tuple): First batch to be shuffled.
+    second_batch (tuple): Second batch to be shuffled
   
   Returns:
-    list: Shuffled images and labels.
+    Tuple: Two batches of images and labels.
   """
-  return shufflearrays(zippedimages[0][0], zippedimages[0][1], zippedimages[1][0], zippedimages[1][1])
+  if (first_batch == None) or (second_batch == None):
+    return (first_batch, second_batch)
+  shuffled_batches = shuffle_arrays(first_batch[0], first_batch[1], second_batch[0], second_batch[1])
+  return ((shuffled_batches[0], shuffled_batches[1]), (shuffled_batches[2], shuffled_batches[3]))
 
 @ray.remote([list, dict], [np.ndarray])
-def convert(imglist, imagepairs):
-  """
-  Converts filename strings to integer labels.
+def convert(img_list, image_pairs):
+  """Converts filename strings to integer labels.
   
   Args:
     imglist (List): Filenames
@@ -84,11 +87,10 @@ def convert(imglist, imagepairs):
   Returns:
     ndarray: Integer labels
   """
-  return np.asarray(map(lambda imgname:int(imagepairs[imgname]), imglist))
+  return np.asarray(map(lambda img_name:int(image_pairs[img_name]), img_list))
 
 def one_hot(x):
-  """
-  Converts integer labels to one hot vectors.
+  """Converts integer labels to one hot vectors.
   
   Args:
     x (int): Index to be set to one
@@ -100,9 +102,8 @@ def one_hot(x):
   zero[x] = 1.0
   return zero
 
-def cropimage(img):
-  """
-  Crops an input image to prove more training for the network.
+def crop_image(img):
+  """Crops an input image to prove more training for the network.
   
   Args:
     img (ndarray): Image to be cropped
@@ -114,11 +115,23 @@ def cropimage(img):
   cropy = np.random.randint(0,31)
   return img[cropx:(cropx+224),cropy:(cropy+224)]
 
+def shuffle_imagenet(batches):
+  """Shuffles the entirety of the provided imagenet.
+  
+  Args:
+    batches: Either a subset of imagenet or the entire imagenet
+ 
+  Returns:
+    List: A shuffled imagenet or subset
+  """
+  permuted_batches = map(tuple, np.random.permutation(batches))
+  grouped_up_batches = zip(permuted_batches[0::2], permuted_batches[1::2])
+  grouped_up_batches = zip(*map(lambda tup:ray.get(shuffles_tuples(tup[0], tup[1])), grouped_up_batches)) # We shuffle by swapp
+  return grouped_up_batches[0] + grouped_up_batches[1]
 
 @ray.remote(16 * [np.ndarray], [])
 def update_weights(*weight):
-  """
-  Updates the weights on a worker
+  """Updates the weights on a worker
 
   Args: 
     weight: Variable number of weights to be applied to the network
@@ -131,27 +144,25 @@ def update_weights(*weight):
 
 @ray.remote([np.ndarray, np.ndarray, np.ndarray], 16 * [np.ndarray])
 def compute_grad(X, Y, mean):
-  """
-  Computes the gradient of the network.
+  """Computes the gradient of the network.
 
   Args:
     X (ndarray): Numpy array of images in the form of [224,224,3]
     Y (ndarray): Labels corresponding to each image
-    mean (ndarray): Mean image to substract from each image for additional training
+    mean (ndarray): Mean image to subtract from images
 
   Returns: 
     List of gradients for each variable
   """
   randindices = np.random.randint(0, len(X), size=[128])
-  subX = map(lambda ind:X[ind], randindices) - mean
-  subY = np.asarray(map(lambda ind:one_hot(Y[ind]), randindices))
-  croppedX = np.asarray(map(cropimage, subX))
-  return sess.run([g for (g,v) in compgrads], feed_dict={images:croppedX, y_true:subY, dropout:0.5})
+  subset_X = map(lambda ind:X[ind], randindices) - mean
+  subset_Y = np.asarray(map(lambda ind:one_hot(Y[ind]), randindices))
+  cropped_X = np.asarray(map(crop_image, subset_X))
+  return sess.run([g for (g,v) in comp_grads], feed_dict={images:cropped_X, y_true:subset_Y, dropout:0.5})
 
 @ray.remote([np.ndarray, np.ndarray], [np.float32])
 def print_accuracy(X, Y):
-  """
-  Prints the accuracy of the network
+  """Prints the accuracy of the network
   
   Args:
     X: Numpy array for input images
@@ -161,12 +172,11 @@ def print_accuracy(X, Y):
     None
   """
   one_hot_Y = np.asarray(map(one_hot, Y))
-  croppedX = np.asarray(map(cropimage, X))
-  return sess.run(accuracy, feed_dict={images:croppedX, y_true:one_hot_Y, dropout:1.0})
+  cropped_X = np.asarray(map(crop_image, X))
+  return sess.run(accuracy, feed_dict={images:cropped_X, y_true:one_hot_Y, dropout:1.0})
 
 def setup_variables(params, placeholders, assigns, kernelshape, biasshape):
-  """
-  Creates the variables for each layer and adds the variables and the components needed to feed them to various lists
+  """Creates the variables for each layer and adds the variables and the components needed to feed them to various lists
   
   Args:
     params (List): Network parameters used for creating feed_dicts
@@ -189,9 +199,8 @@ def setup_variables(params, placeholders, assigns, kernelshape, biasshape):
   placeholders += [kernel_new, biases_new]
   assigns += [update_kernel, update_biases]
 
-def conv_layer(prevlayer, shape, scope):
-  """
-  Constructs a convolutional layer for the network.
+def conv_layer(prev_layer, shape, scope):
+  """Constructs a convolutional layer for the network.
 
   Args:
     prevlayer (Tensor): The previous layer to connect the network together.
@@ -203,9 +212,9 @@ def conv_layer(prevlayer, shape, scope):
   """
   kernel = parameters[-2]
   bias = parameters[-1]
-  conv = tf.nn.conv2d(prevlayer, kernel, shape, padding='SAME')
-  addbias = tf.nn.bias_add(conv, bias)
-  return tf.nn.relu(addbias, name=scope)
+  conv = tf.nn.conv2d(prev_layer, kernel, shape, padding='SAME')
+  add_bias = tf.nn.bias_add(conv, bias)
+  return tf.nn.relu(add_bias, name=scope)
 
 images = tf.placeholder(tf.float32, shape=[None, 224, 224, 3])
 y_true = tf.placeholder(tf.float32, shape=[None, 1000])
@@ -216,6 +225,7 @@ placeholders = []
 with tf.name_scope('conv1') as scope:
   setup_variables(parameters, placeholders, assignment, [11, 11, 3, 96], [96])
   conv1 = conv_layer(images, [1, 4, 4, 1], scope)
+
 # pool1
 pool1 = tf.nn.max_pool(conv1,
                        ksize=[1, 3, 3, 1],
@@ -223,15 +233,15 @@ pool1 = tf.nn.max_pool(conv1,
                        padding='VALID',
                        name='pool1')
 
-
 # lrn1
-pool1lrn = tf.nn.lrn(pool1, depth_radius=5, bias=1.0,
-                            alpha=0.0001, beta=0.75,
-                            name="LocalResponseNormalization")
+pool1_lrn = tf.nn.lrn(pool1, depth_radius=5, bias=1.0,
+                             alpha=0.0001, beta=0.75,
+                             name="LocalResponseNormalization")
+
 # conv2
 with tf.name_scope('conv2') as scope:
   setup_variables(parameters, placeholders, assignment, [5, 5, 96, 256], [256])
-  conv2 = conv_layer(pool1lrn, [1, 1, 1, 1], scope)
+  conv2 = conv_layer(pool1_lrn, [1, 1, 1, 1], scope)
 
 pool2 = tf.nn.max_pool(conv2,
                        ksize=[1, 3, 3, 1],
@@ -240,17 +250,20 @@ pool2 = tf.nn.max_pool(conv2,
                        name='pool2')
 
 # lrn2
-pool2lrn = tf.nn.lrn(pool2, depth_radius=5, bias=1.0,
-                            alpha=0.0001, beta=0.75,
-                            name="LocalResponseNormalization")
+pool2_lrn = tf.nn.lrn(pool2, depth_radius=5, bias=1.0,
+                             alpha=0.0001, beta=0.75,
+                             name="LocalResponseNormalization")
+
 # conv3
 with tf.name_scope('conv3') as scope:
   setup_variables(parameters, placeholders, assignment, [3, 3, 256, 384], [384])
-  conv3 = conv_layer(pool2lrn, [1, 1, 1, 1], scope)
+  conv3 = conv_layer(pool2_lrn, [1, 1, 1, 1], scope)
+
 # conv4
 with tf.name_scope('conv4') as scope:
   setup_variables(parameters, placeholders, assignment, [3, 3, 384, 384], [384])
   conv4 = conv_layer(conv3, [1, 1, 1, 1], scope)
+
 # conv5
 with tf.name_scope('conv5') as scope:
   setup_variables(parameters, placeholders, assignment, [3, 3, 384, 256], [256])
@@ -264,15 +277,16 @@ pool5 = tf.nn.max_pool(conv5,
                        name='pool5') 
 
 # lrn5
-pool5lrn = tf.nn.lrn(pool5, depth_radius=5, bias=1.0,
-                            alpha=0.0001, beta=0.75,
-                            name="LocalResponseNormalization")
+pool5_lrn = tf.nn.lrn(pool5, depth_radius=5, bias=1.0,
+                             alpha=0.0001, beta=0.75,
+                             name="LocalResponseNormalization")
+
 dropout = tf.placeholder(tf.float32)
 
 with tf.name_scope('fc1') as scope:
-  n_input = int(np.prod(pool5lrn.get_shape().as_list()[1:]))
+  n_input = int(np.prod(pool5_lrn.get_shape().as_list()[1:]))
   setup_variables(parameters, placeholders, assignment, [n_input, 4096], [4096])
-  fc_in = tf.reshape(pool5lrn, [-1, n_input])
+  fc_in = tf.reshape(pool5_lrn, [-1, n_input])
   fc_layer1 = tf.nn.tanh(tf.nn.bias_add(tf.matmul(fc_in, parameters[-2]), parameters[-1]))
   fc_out1 = tf.nn.dropout(fc_layer1, dropout)
 
@@ -302,7 +316,7 @@ opt = tf.train.MomentumOptimizer(learning_rate=0.01, momentum=0.9) # Any other o
 correct_pred = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y_true, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
-compgrads = opt.compute_gradients(cross_entropy, parameters)
+comp_grads = opt.compute_gradients(cross_entropy, parameters)
 
 application = opt.apply_gradients(zip(placeholders,parameters))
 sess = tf.Session()
