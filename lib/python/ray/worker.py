@@ -669,8 +669,8 @@ def main_loop(worker=global_worker):
         worker.register_function(remote(arg_types, return_types, worker)(function))
       if reusable_variable is not None:
         name, initializer_str, reinitializer_str = reusable_variable
-        initializer = pickling.deserialize(initializer_str)
-        reinitializer = pickling.deserialize(reinitializer_str)
+        initializer = pickling.loads(initializer_str)
+        reinitializer = pickling.loads(reinitializer_str)
         reusables.__setattr__(name, Reusable(initializer, reinitializer))
       if task is not None:
         process_task(task)
@@ -710,7 +710,7 @@ def _export_reusable_variable(name, reusable, worker=global_worker):
   """
   if _mode(worker) not in [ray.SHELL_MODE, ray.SCRIPT_MODE]:
     raise Exception("_export_reusable_variable can only be called on a driver.")
-  ray.lib.export_reusable_variable(worker.handle, name, pickling.serialize(reusable.initializer), pickling.serialize(reusable.reinitializer))
+  ray.lib.export_reusable_variable(worker.handle, name, pickling.dumps(reusable.initializer), pickling.dumps(reusable.reinitializer))
 
 def remote(arg_types, return_types, worker=global_worker):
   """This decorator is used to create remote functions.
@@ -720,8 +720,9 @@ def remote(arg_types, return_types, worker=global_worker):
     return_types (List[type]): List of Python types of the return values.
   """
   def remote_decorator(func):
-    to_export = pickling.dumps(func, arg_types, return_types) if worker.mode in [ray.SHELL_MODE, ray.SCRIPT_MODE] else None
-    def func_executor(arguments):
+    to_export = pickling.dumps((func, arg_types, return_types)) if worker.mode in [ray.SHELL_MODE, ray.SCRIPT_MODE] else None
+    # NOTE: __call__ has a special meaning for pickling!
+    def __call__(arguments):
       """This gets run when the remote function is executed."""
       logging.info("Calling function {}".format(func.__name__))
       start_time = time.time()
@@ -745,7 +746,7 @@ def remote(arg_types, return_types, worker=global_worker):
         return objrefs[0]
       elif len(objrefs) > 1:
         return objrefs
-    func_call.executor = func_executor
+    func_call.executor = __call__
     func_call.arg_types = arg_types
     func_call.return_types = return_types
     func_call.is_remote = True
