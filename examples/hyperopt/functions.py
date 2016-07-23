@@ -1,11 +1,12 @@
-# Most of the tensorflow code is adapted from Tensorflow's tutorial on using CNNs to train MNIST
-# https://www.tensorflow.org/versions/r0.9/tutorials/mnist/pros/index.html#build-a-multilayer-convolutional-network
 import tensorflow as tf
-from tensorflow.examples.tutorials.mnist import input_data
-import numpy as np
-import ray
 
-mnist = input_data.read_data_sets("MNIST_data", one_hot=True)
+def get_batch(data, batch_index, batch_size):
+  # This method currently drops data when num_data is not divisible by
+  # batch_size.
+  num_data = data.shape[0]
+  num_batches = num_data / batch_size
+  batch_index %= num_batches
+  return data[(batch_index * batch_size):((batch_index + 1) * batch_size)]
 
 def weight(shape, stddev):
   initial = tf.truncated_normal(shape, stddev=stddev)
@@ -20,29 +21,6 @@ def conv2d(x, W):
 
 def max_pool_2x2(x):
   return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding="SAME")
-
-@ray.remote([dict, int], [float])
-def train_cnn(params, epochs):
-  learning_rate = params["learning_rate"]
-  batch_size = params["batch_size"]
-  keep = 1 - params["dropout"]
-  stddev = params["stddev"]
-  x = tf.placeholder(tf.float32, shape=[None, 784])
-  y = tf.placeholder(tf.float32, shape=[None, 10])
-  keep_prob = tf.placeholder(tf.float32)
-  train_step, accuracy = cnn_setup(x, y, keep_prob, learning_rate, stddev)
-  with tf.Session() as sess:
-    sess.run(tf.initialize_all_variables())
-    for i in range(1, epochs):
-      batch = mnist.train.next_batch(batch_size)
-      sess.run(train_step, feed_dict={x: batch[0], y: batch[1], keep_prob: keep})
-      if i % 100 == 0: # checks if accuracy is low enough to stop early every set number of epochs
-        train_ac = accuracy.eval(feed_dict={x: batch[0], y: batch[1], keep_prob: 1.0})
-        if train_ac < 0.25: # Accuracy threshold is on a application to application basis.
-          totalacc = accuracy.eval(feed_dict={x: mnist.validation.images, y: mnist.validation.labels, keep_prob: 1.0})
-          return totalacc
-    totalacc = accuracy.eval(feed_dict={x: mnist.validation.images, y: mnist.validation.labels, keep_prob: 1.0})
-  return totalacc.astype("float64")
 
 def cnn_setup(x, y, keep_prob, lr, stddev):
   first_hidden = 32

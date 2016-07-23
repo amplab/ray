@@ -19,5 +19,4 @@ if __name__ == "__main__":
     # zeroth position is reserved for the empty string.
     sys.path.insert(1, args.user_source_directory)
   ray.worker.connect(args.scheduler_address, args.objstore_address, args.worker_address)
-
   ray.worker.main_loop()
