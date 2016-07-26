@@ -10,9 +10,76 @@ import argparse
 import boto3
 import random
 
+import tarfile, io
+import Image
+
 num_workers = 3
 worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../scripts/default_worker.py")
 services.start_ray_local(num_workers=num_workers, worker_path=worker_path)
+
+def load_chunk(tarfile, size=None):
+  """Load a number of images from a single imagenet .tar file.
+
+  This function also converts the image from grayscale to RGB if neccessary.
+
+  Args:
+    tarfile (tarfile.TarFile): The archive from which the files get loaded.
+    size (Optional[Tuple[int, int]]): Resize the image to this size if provided.
+
+  Returns:
+    numpy.ndarray: Contains the image data in format [batch, w, h, c]
+  """
+  result = []
+  filenames = []
+  for member in tarfile.getmembers():
+    filename = member.path
+    content = tarfile.extractfile(member)
+    img = Image.open(content)
+    rgbimg = Image.new("RGB", img.size)
+    rgbimg.paste(img)
+    if size != None:
+      rgbimg = rgbimg.resize(size, Image.ANTIALIAS)
+    result.append(np.array(rgbimg).reshape(1, rgbimg.size[0], rgbimg.size[1], 3))
+    filenames.append(filename)
+  return np.concatenate(result), filenames
+
+@ray.remote([str, str, List], [np.ndarray, List])
+def load_tarfile_from_s3(bucket, s3_key, size=[]):
+  """Load an imagenet .tar file.
+
+  Args:
+    bucket (str): Bucket holding the imagenet .tar.
+    s3_key (str): s3 key from which the .tar file is loaded.
+    size (List[int]): Resize the image to this size if size != []; len(size) == 2 required.
+
+  Returns:
+    np.ndarray: The image data (see load_chunk).
+  """
+  s3 = boto3.client("s3")
+  response = s3.get_object(Bucket=bucket, Key=s3_key)
+  output = io.BytesIO()
+  chunk = response["Body"].read(1024 * 8)
+  while chunk:
+    output.write(chunk)
+    chunk = response["Body"].read(1024 * 8)
+  output.seek(0) # go to the beginning of the .tar file
+  tar = tarfile.open(mode="r", fileobj=output)
+  return load_chunk(tar, size=size if size != [] else None)
+
+@ray.remote([str, List, List], [List])
+def load_tarfiles_from_s3(bucket, s3_keys, size=[]):
+  """Load a number of imagenet .tar files.
+
+  Args:
+    bucket (str): Bucket holding the imagenet .tars.
+    s3_keys (List[str]): List of s3 keys from which the .tar files are being loaded.
+    size (List[int]): Resize the image to this size if size != []; len(size) == 2 required.
+
+  Returns:
+    np.ndarray: Contains object references to the chunks of the images (see load_chunk).
+  """
+
+  return [load_tarfile_from_s3(bucket, s3_key, size) for s3_key in s3_keys]
 
 def setup_variables(params, placeholders, assigns, kernelshape, biasshape):
   """Creates the variables for each layer and adds the variables and the components needed to feed them to various lists
@@ -170,7 +237,7 @@ def net_reinitialization(net_vars):
 
 ray.reusables.net_vars = ray.Reusable(net_initialization, net_reinitialization)
 
-@ray.remote([List[Tuple[ray.ObjRef, ray.ObjRef]]], [int])
+@ray.remote([List], [int])
 def num_images(batches):
   """Counts number of images in batches.
   
@@ -183,7 +250,7 @@ def num_images(batches):
   shape_refs = [ra.shape(batch[0]) for batch in batches]
   return sum([ray.get(shape_ref)[0] for shape_ref in shape_refs])
 
-@ray.remote([List[Tuple[ray.ObjRef, ray.ObjRef]]], [np.ndarray])
+@ray.remote([List], [np.ndarray])
 def compute_mean_image(batches):
   """Computes the mean of images in batches.
   
@@ -365,12 +432,12 @@ image_pairs = ray.put(dict(map(lambda tup: (os.path.basename(tup[0]), tup[-1]), 
 print("Label dictionary created")
 
 # Downloading imagenet and computing mean image of entire set for processing batches
-imagenet = ray.get(imagenet.load_tarfiles_from_s3(args.s3_bucket, map(str, images), [256, 256]))
-mean_ref = functions.compute_mean_image(imagenet)
+imagenet = ray.get(load_tarfiles_from_s3(args.s3_bucket, map(str, images), [256, 256]))
+mean_ref = compute_mean_image(imagenet)
 print("Imagenet downloaded and mean computed")
 
 # Converted the parsed filenames to integer labels, creating our batches
-batches = map(lambda tup: (tup[0], functions.convert(tup[-1], image_pairs)), imagenet)
+batches = map(lambda tup: (tup[0], convert(tup[-1], image_pairs)), imagenet)
 print("Batches created")
 
 # Imagenet is typically not preshuffled, so this loop does that.
@@ -378,7 +445,7 @@ if len(batches) % 2 == 0:
   batches.append(None)
 print batches
 for i in range(num_of_shuffles):
-  batches = functions.shuffle_imagenet(batches)
+  batches = shuffle_imagenet(batches)
   print("{}".format(ray.get(batches[0][1])))
 batches = filter(lambda tup: tup != None, batches)
 print("Batches shuffled")

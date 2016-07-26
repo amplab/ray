@@ -5,7 +5,7 @@ import numpy as np
 import boto3
 import ray
 
-s3 = boto3.client("s3")
+
 
 def load_chunk(tarfile, size=None):
   """Load a number of images from a single imagenet .tar file.
@@ -19,7 +19,6 @@ def load_chunk(tarfile, size=None):
   Returns:
     numpy.ndarray: Contains the image data in format [batch, w, h, c]
   """
-
   result = []
   filenames = []
   for member in tarfile.getmembers():
@@ -34,7 +33,7 @@ def load_chunk(tarfile, size=None):
     filenames.append(filename)
   return np.concatenate(result), filenames
 
-@ray.remote([str, str, List[int]], [np.ndarray, List])
+@ray.remote([str, str, List], [np.ndarray, List])
 def load_tarfile_from_s3(bucket, s3_key, size=[]):
   """Load an imagenet .tar file.
 
@@ -46,7 +45,7 @@ def load_tarfile_from_s3(bucket, s3_key, size=[]):
   Returns:
     np.ndarray: The image data (see load_chunk).
   """
-
+  s3 = boto3.client("s3")
   response = s3.get_object(Bucket=bucket, Key=s3_key)
   output = io.BytesIO()
   chunk = response["Body"].read(1024 * 8)
@@ -57,7 +56,7 @@ def load_tarfile_from_s3(bucket, s3_key, size=[]):
   tar = tarfile.open(mode="r", fileobj=output)
   return load_chunk(tar, size=size if size != [] else None)
 
-@ray.remote([str, List[str], List[int]], [List[Tuple[ray.ObjRef, ray.ObjRef]]])
+@ray.remote([str, List, List], [List])
 def load_tarfiles_from_s3(bucket, s3_keys, size=[]):
   """Load a number of imagenet .tar files.
 
