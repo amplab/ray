@@ -358,22 +358,8 @@ def shuffle_imagenet(batches):
   grouped_up_batches = zip(*map(lambda tup: ray.get(shuffles_tuples(tup[0], tup[1])), grouped_up_batches)) # We shuffle by swapp
   return grouped_up_batches[0] + grouped_up_batches[1]
 
-@ray.remote([List], [])
-def update_weights(weight):
-  """Updates the weights on a worker
-
-  Args: 
-    weight: Variable number of weights to be applied to the network
-  
-  Returns: 
-    None
-  """
-  _, sess, _, _, _, _, _, placeholders, _, assignment = ray.reusables.net_vars
-  feed_dict = dict(zip(placeholders, weight))
-  sess.run(assignment, feed_dict=feed_dict)
-
-@ray.remote([np.ndarray, np.ndarray, np.ndarray], [List])
-def compute_grad(X, Y, mean):
+@ray.remote([np.ndarray, np.ndarray, np.ndarray, List], [List])
+def compute_grad(X, Y, mean, weights):
   """Computes the gradient of the network.
   Args:
     X (ndarray): Numpy array of images in the form of [224,224,3]
@@ -382,7 +368,9 @@ def compute_grad(X, Y, mean):
   Returns: 
     List of gradients for each variable
   """
-  comp_grads, sess, _, _, images, y_true, dropout, _, _, _ = ray.reusables.net_vars
+  comp_grads, sess, _, _, images, y_true, dropout, placeholders, _, assignment = ray.reusables.net_vars
+  feed_dict = dict(zip(placeholders, weights))
+  sess.run(assignment, feed_dict=feed_dict)
   randindices = np.random.randint(0, len(X), size=[128])
   subset_X = map(lambda ind: X[ind], randindices) - mean
   subset_Y = np.asarray(map(lambda ind: one_hot(Y[ind]), randindices))
@@ -462,23 +450,14 @@ print("Weights passed")
 while True:
   print("Start of loop")
   results = []
-
-  # Get weights from local network and 
+ 
   weights = sess.run(parameters) # Retrieve weights from local network
   weight_refs = ray.put(weights) #Place weights into objstore
-  for i in range(num_workers):
-    update_weights(weight_refs) # Update the weights on each worker.
-  print("Weights sent")
-
-  #Print accuracy
-  if (batch_num % 100 == 0):
-    x_ref, y_ref = random.choice(batches)
-    print ray.get(print_accuracy(x_ref, y_ref))
 
   #Send the requests to compute the gradients to the workers
   for i in range(num_workers):
     x_ref,y_ref = random.choice(batches)
-    results.append(compute_grad(x_ref, y_ref, mean_ref))
+    results.append(compute_grad(x_ref, y_ref, mean_ref, weight_refs))
   print("Grad references recieved")
 
   # Take the mean across each set of gradients and apply to the local network.
@@ -486,6 +465,12 @@ while True:
   gradients = [np.asarray([grad_set[i] for grad_set in gotten_gradients]) for i in range(16)] # 16 gradients, one for each variable
   gradient_mean = map(lambda x: np.mean(x, axis=0), gradients) # Taking mean over all the samples
   sess.run(application, feed_dict=dict(zip(placeholders, gradient_mean))) # Feeding the new values in
+  
+  #Print accuracy
+  if (batch_num % 100 == 0):
+    x_ref, y_ref = random.choice(batches)
+    print ray.get(print_accuracy(x_ref, y_ref))
+
   print("End of batch {}".format(batch_num))
   batch_num += 1
 
