@@ -18,9 +18,10 @@ install:
   - ./install-dependencies.sh
   - ./setup.sh
   - ./build.sh
+  - ./install-example-application-dependencies.sh
 
 script:
   - source setup-env.sh
-  - cd test
-  - python runtest.py
-  - python array_test.py
+  - python test/runtest.py
+  - python test/array_test.py
+  - python examples/lbfgs/driver.py
