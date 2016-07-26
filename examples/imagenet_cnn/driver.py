@@ -358,8 +358,8 @@ def shuffle_imagenet(batches):
   grouped_up_batches = zip(*map(lambda tup: ray.get(shuffles_tuples(tup[0], tup[1])), grouped_up_batches)) # We shuffle by swapp
   return grouped_up_batches[0] + grouped_up_batches[1]
 
-@ray.remote(16 * [np.ndarray], [])
-def update_weights(*weight):
+@ray.remote([List], [])
+def update_weights(weight):
   """Updates the weights on a worker
 
   Args: 
@@ -372,7 +372,7 @@ def update_weights(*weight):
   feed_dict = dict(zip(placeholders, weight))
   sess.run(assignment, feed_dict=feed_dict)
 
-@ray.remote([np.ndarray, np.ndarray, np.ndarray], 16 * [np.ndarray])
+@ray.remote([np.ndarray, np.ndarray, np.ndarray], [List])
 def compute_grad(X, Y, mean):
   """Computes the gradient of the network.
   Args:
@@ -465,9 +465,9 @@ while True:
 
   # Get weights from local network and 
   weights = sess.run(parameters) # Retrieve weights from local network
-  weight_refs = map(ray.put, weights) #Place weights into objstore
+  weight_refs = ray.put(weights) #Place weights into objstore
   for i in range(num_workers):
-    update_weights(*weight_refs) # Update the weights on each worker.
+    update_weights(weight_refs) # Update the weights on each worker.
   print("Weights sent")
 
   #Print accuracy
@@ -482,7 +482,7 @@ while True:
   print("Grad references recieved")
 
   # Take the mean across each set of gradients and apply to the local network.
-  gotten_gradients = map(lambda x: map(ray.get, x), results) # Get the actual gradients, halting the program until all are available.
+  gotten_gradients = map(ray.get, results) # Get the actual gradients, halting the program until all are available.
   gradients = [np.asarray([grad_set[i] for grad_set in gotten_gradients]) for i in range(16)] # 16 gradients, one for each variable
   gradient_mean = map(lambda x: np.mean(x, axis=0), gradients) # Taking mean over all the samples
   sess.run(application, feed_dict=dict(zip(placeholders, gradient_mean))) # Feeding the new values in
