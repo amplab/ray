@@ -267,14 +267,14 @@ def compute_mean_image(batches):
   return np.sum(sum_images, axis=0).astype("float64") / ray.get(n_images)
 
 @ray.remote([np.ndarray, np.ndarray, np.ndarray, np.ndarray], [np.ndarray, np.ndarray, np.ndarray, np.ndarray])
-def shuffle_arrays(images1, labels1, images2, labels2):
+def shuffle_arrays(first_images, first_labels, second_images, second_labels):
   """Shuffles the data of two batches.
   
   Args:
-    images1 (ndarray): Images of first batch
-    labels1 (ndarray): Labels of first batch
-    images2 (ndarray): Images of second batch
-    labels2 (ndarray): Labels of second batch
+    first_images (ndarray): Images of first batch
+    first_labels (ndarray): Labels of first batch
+    second_images (ndarray): Images of second batch
+    second_labels (ndarray): Labels of second batch
   
   Returns:
     ndarray: Shuffled images for first batch
@@ -282,16 +282,17 @@ def shuffle_arrays(images1, labels1, images2, labels2):
     ndarray: Shuffled images for second batch
     ndarray: Shuffled labels for second batch
   """
-  to_shuffle = zip(images1, labels1) + zip(images2, labels2)
-  np.random.shuffle(to_shuffle)
-  length = len(images1)
-  first_batch = zip(*to_shuffle[0:length])
-  first_array = map(np.asarray, first_batch)
-  second_batch = zip(*to_shuffle[length:len(to_shuffle)])
-  second_array = map(np.asarray, second_batch)
-  return first_array[0], first_array[1], second_array[0], second_array[1]
+  images = np.concatenate((first_images, second_images))
+  labels = np.concatenate((first_labels, second_labels))
+  total_length = len(images)
+  first_len = len(first_images)
+  random_indices = np.random.permutation(total_length)
+  new_first_images = images[random_indices[0:first_len]]
+  new_first_labels = labels[random_indices[0:first_len]]
+  new_second_images = images[random_indices[first_len:total_length]]
+  new_second_labels = labels[random_indices[first_len:total_length]]
+  return new_first_images, new_first_labels, new_second_images, new_second_labels
 
-@ray.remote([Tuple, Tuple], [Tuple])
 def shuffles_tuples(first_batch, second_batch):
   """Calls shufflearrays in order to properly serialize the data.
   Args:
@@ -301,8 +302,6 @@ def shuffles_tuples(first_batch, second_batch):
   Returns:
     Tuple: Two batches of images and labels.
   """
-  if (first_batch == None) or (second_batch == None):
-    return (first_batch, second_batch)
   shuffled_batches = shuffle_arrays(first_batch[0], first_batch[1], second_batch[0], second_batch[1])
   return ((shuffled_batches[0], shuffled_batches[1]), (shuffled_batches[2], shuffled_batches[3]))
 
@@ -353,10 +352,12 @@ def shuffle_imagenet(batches):
   Returns:
     List: A shuffled imagenet or subset
   """
-  permuted_batches = map(tuple, np.random.permutation(batches))
+  permuted_batches = np.random.permutation(batches)
   grouped_up_batches = zip(permuted_batches[0::2], permuted_batches[1::2])
-  grouped_up_batches = zip(*map(lambda tup: ray.get(shuffles_tuples(tup[0], tup[1])), grouped_up_batches)) # We shuffle by swapp
-  return grouped_up_batches[0] + grouped_up_batches[1]
+  shuffled_batches = [shuffles_tuples(first, second) for first, second in grouped_up_batches]
+  finished_batches = zip(*shuffled_batches) # We shuffle by swapp
+  extra = (permuted_batches[-1],) if len(permuted_batches) % 2 != 0 else ()
+  return finished_batches[0] + finished_batches[1] + extra
 
 @ray.remote([np.ndarray, np.ndarray, np.ndarray, List], [List])
 def compute_grad(X, Y, mean, weight):
@@ -405,15 +406,15 @@ parser.add_argument("--label-file", default="train.txt", type=str, help="File co
 
 # Preparing keys for the data to be downloaded from
 args = parser.parse_args()
-s3 = boto3.resource("s3")
-imagenet_bucket = s3.Bucket(args.s3_bucket)
+s3_resource = boto3.resource("s3")
+imagenet_bucket = s3_resource.Bucket(args.s3_bucket)
 objects = imagenet_bucket.objects.filter(Prefix=args.key_prefix)
 images = [obj.key for obj in objects.all()]
 print("Keys created")
 
 # Downloading the label file, converting each line to key:values
-s3 = boto3.client("s3")
-label_file = s3.get_object(Bucket=args.s3_bucket, Key=args.label_file)
+s3_client = boto3.client("s3")
+label_file = s3_client.get_object(Bucket=args.s3_bucket, Key=args.label_file)
 name_label_pairs = label_file["Body"].read().split("\n")
 image_pairs = map(lambda line: line.split(" ", 2), name_label_pairs)
 image_pairs = ray.put(dict(map(lambda tup: (os.path.basename(tup[0]), tup[-1]), image_pairs)))
@@ -429,13 +430,10 @@ batches = map(lambda tup: (tup[0], convert(tup[-1], image_pairs)), imagenet)
 print("Batches created")
 
 # Imagenet is typically not preshuffled, so this loop does that.
-if len(batches) % 2 == 0:
-  batches.append(None)
 print batches
 for i in range(num_of_shuffles):
   batches = shuffle_imagenet(batches)
   print("{}".format(ray.get(batches[0][1])))
-batches = filter(lambda tup: tup != None, batches)
 print("Batches shuffled")
 
 _, sess, application, _, _, _, _, placeholders, parameters, assignment = ray.reusables.net_vars
