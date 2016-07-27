@@ -14,8 +14,7 @@ import tarfile, io
 import Image
 
 num_workers = 3
-worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../scripts/default_worker.py")
-services.start_ray_local(num_workers=num_workers, worker_path=worker_path)
+services.start_ray_local(num_workers=num_workers)
 
 def load_chunk(tarfile, size=None):
   """Load a number of images from a single imagenet .tar file.
@@ -89,7 +88,7 @@ def setup_variables(params, placeholders, assigns, kernelshape, biasshape):
     placeholders (List): Placeholders used for feeding weights into
     assigns (List): Assignments used for actually setting variables
     kernelshape (List): Shape of the kernel used for the conv layer
-    biasshape (List):Shape of the bias used
+    biasshape (List): Shape of the bias used
   
   Returns: 
     None
@@ -333,7 +332,9 @@ def one_hot(x):
   return zero
 
 def crop_image(img):
-  """Crops an input image to prove more training for the network.
+  """Generates a random crop of an image. This is used to generate many 
+     slightly different images from each training example to improve the 
+     network's capability to generalize.
   
   Args:
     img (ndarray): Image to be cropped
@@ -358,8 +359,22 @@ def shuffle_imagenet(batches):
   grouped_up_batches = zip(*map(lambda tup: ray.get(shuffles_tuples(tup[0], tup[1])), grouped_up_batches)) # We shuffle by swapp
   return grouped_up_batches[0] + grouped_up_batches[1]
 
-@ray.remote([np.ndarray, np.ndarray, np.ndarray, List], [List])
-def compute_grad(X, Y, mean, weights):
+@ray.remote([List], [])
+def update_weights(weight):
+  """Updates the weights on a worker
+
+  Args: 
+    weight: Variable number of weights to be applied to the network
+  
+  Returns: 
+    None
+  """
+  _, sess, _, _, _, _, _, placeholders, _, assignment = ray.reusables.net_vars
+  feed_dict = dict(zip(placeholders, weight))
+  sess.run(assignment, feed_dict=feed_dict)
+
+@ray.remote([np.ndarray, np.ndarray, np.ndarray], [List])
+def compute_grad(X, Y, mean):
   """Computes the gradient of the network.
   Args:
     X (ndarray): Numpy array of images in the form of [224,224,3]
@@ -369,8 +384,6 @@ def compute_grad(X, Y, mean, weights):
     List of gradients for each variable
   """
   comp_grads, sess, _, _, images, y_true, dropout, placeholders, _, assignment = ray.reusables.net_vars
-  feed_dict = dict(zip(placeholders, weights))
-  sess.run(assignment, feed_dict=feed_dict)
   randindices = np.random.randint(0, len(X), size=[128])
   subset_X = map(lambda ind: X[ind], randindices) - mean
   subset_Y = np.asarray(map(lambda ind: one_hot(Y[ind]), randindices))
@@ -450,11 +463,12 @@ print("Weights passed")
 while True:
   print("Start of loop")
   results = []
- 
+
+  # Get weights from local network and 
   weights = sess.run(parameters) # Retrieve weights from local network
   weight_refs = ray.put(weights) #Place weights into objstore
 
-  #Send the requests to compute the gradients to the workers
+  # Send the requests to compute the gradients to the workers
   for i in range(num_workers):
     x_ref,y_ref = random.choice(batches)
     results.append(compute_grad(x_ref, y_ref, mean_ref, weight_refs))
@@ -466,7 +480,7 @@ while True:
   gradient_mean = map(lambda x: np.mean(x, axis=0), gradients) # Taking mean over all the samples
   sess.run(application, feed_dict=dict(zip(placeholders, gradient_mean))) # Feeding the new values in
   
-  #Print accuracy
+  # Print accuracy
   if (batch_num % 100 == 0):
     x_ref, y_ref = random.choice(batches)
     print ray.get(print_accuracy(x_ref, y_ref))
