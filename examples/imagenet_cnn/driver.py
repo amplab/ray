@@ -5,7 +5,6 @@ import ray.services as services
 import ray.array.remote as ra
 import os
 import tensorflow as tf
-import imagenet
 import argparse
 import boto3
 import random
