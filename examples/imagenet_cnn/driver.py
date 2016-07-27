@@ -358,22 +358,8 @@ def shuffle_imagenet(batches):
   grouped_up_batches = zip(*map(lambda tup: ray.get(shuffles_tuples(tup[0], tup[1])), grouped_up_batches)) # We shuffle by swapp
   return grouped_up_batches[0] + grouped_up_batches[1]
 
-@ray.remote([List], [])
-def update_weights(weight):
-  """Updates the weights on a worker
-
-  Args: 
-    weight: Variable number of weights to be applied to the network
-  
-  Returns: 
-    None
-  """
-  _, sess, _, _, _, _, _, placeholders, _, assignment = ray.reusables.net_vars
-  feed_dict = dict(zip(placeholders, weight))
-  sess.run(assignment, feed_dict=feed_dict)
-
-@ray.remote([np.ndarray, np.ndarray, np.ndarray], [List])
-def compute_grad(X, Y, mean):
+@ray.remote([np.ndarray, np.ndarray, np.ndarray, List], [List])
+def compute_grad(X, Y, mean, weight):
   """Computes the gradient of the network.
   Args:
     X (ndarray): Numpy array of images in the form of [224,224,3]
@@ -383,6 +369,8 @@ def compute_grad(X, Y, mean):
     List of gradients for each variable
   """
   comp_grads, sess, _, _, images, y_true, dropout, placeholders, _, assignment = ray.reusables.net_vars
+  feed_dict = dict(zip(placeholders, weight))
+  sess.run(assignment, feed_dict=feed_dict)
   randindices = np.random.randint(0, len(X), size=[128])
   subset_X = map(lambda ind: X[ind], randindices) - mean
   subset_Y = np.asarray(map(lambda ind: one_hot(Y[ind]), randindices))
