@@ -344,18 +344,17 @@ Status SchedulerService::TaskInfo(ServerContext* context, const TaskInfoRequest*
   auto failed_tasks = GET(failed_tasks_);
   auto computation_graph = GET(computation_graph_);
   auto workers = GET(workers_);
-  for (int i = 0; i < failed_tasks->size(); ++i) {
-    TaskStatus* info = reply->add_failed_task();
-    *info = (*failed_tasks)[i];
+  for (auto i = failed_tasks->begin(); i != failed_tasks->end(); ++i) {
+    *reply->add_failed_task() = *i;
   }
-  for (size_t i = 0; i < workers->size(); ++i) {
-    OperationId operationid = (*workers)[i].current_task;
+  for (auto i = workers->begin(); i != workers->end(); ++i) {
+    OperationId operationid = i->current_task;
     if (operationid != NO_OPERATION && operationid != ROOT_OPERATION) {
       const Task& task = computation_graph->get_task(operationid);
       TaskStatus* info = reply->add_running_task();
       info->set_operationid(operationid);
       info->set_function_name(task.name());
-      info->set_worker_address((*workers)[i].worker_address);
+      info->set_worker_address(i->worker_address);
     }
   }
   reply->set_num_succeeded(successful_tasks->size());
@@ -374,19 +373,19 @@ Status SchedulerService::KillWorkers(ServerContext* context, const KillWorkersRe
   size_t busy_workers = 0;
   std::vector<WorkerHandle*> idle_workers;
   RAY_LOG(RAY_INFO, "Attempting to kill workers.");
-  for (size_t i = 0; i < workers->size(); ++i) {
-    WorkerHandle* worker = &(*workers)[i];
-    if (worker->worker_stub) {
-      if (worker->current_task == NO_OPERATION) {
-        idle_workers.push_back(worker);
-        RAY_CHECK(std::find(avail_workers->begin(), avail_workers->end(), i) != avail_workers->end(), "Worker with workerid " << i << " is idle, but is not in avail_workers_");
-        RAY_LOG(RAY_INFO, "Worker with workerid " << i << " is idle.");
-      } else if (worker->current_task == ROOT_OPERATION) {
+  for (auto i = workers->begin(); i != workers->end(); ++i) {
+    auto worker_id = static_cast<WorkerId>(i - workers->begin());
+    if (i->worker_stub) {
+      if (i->current_task == NO_OPERATION) {
+        idle_workers.push_back(&*i);
+        RAY_CHECK(std::find(avail_workers->begin(), avail_workers->end(), worker_id) != avail_workers->end(), "Worker with workerid " << worker_id << " is idle, but is not in avail_workers_");
+        RAY_LOG(RAY_INFO, "Worker with workerid " << worker_id << " is idle.");
+      } else if (i->current_task == ROOT_OPERATION) {
         // Skip the driver
-        RAY_LOG(RAY_INFO, "Worker with workerid " << i << " is a driver.");
+        RAY_LOG(RAY_INFO, "Worker with workerid " << worker_id << " is a driver.");
       } else {
         ++busy_workers;
-        RAY_LOG(RAY_INFO, "Worker with workerid " << i << " is running a task.");
+        RAY_LOG(RAY_INFO, "Worker with workerid " << worker_id << " is running a task.");
       }
     }
   }
@@ -542,37 +541,28 @@ bool SchedulerService::can_run(const Task& task) {
 
 std::pair<WorkerId, ObjStoreId> SchedulerService::register_worker(const std::string& worker_address, const std::string& objstore_address, bool is_driver) {
   RAY_LOG(RAY_INFO, "registering worker " << worker_address << " connected to object store " << objstore_address);
-  ObjStoreId objstoreid = std::numeric_limits<size_t>::max();
+  auto workerid = std::numeric_limits<WorkerId>::max();
+  auto objstoreid = std::numeric_limits<ObjStoreId>::max();
   // TODO: HACK: num_attempts is a hack
   for (int num_attempts = 0; num_attempts < 30; ++num_attempts) {
     auto objstores = GET(objstores_);
-    for (size_t i = 0; i < objstores->size(); ++i) {
-      if ((*objstores)[i].address == objstore_address) {
-        objstoreid = i;
-      }
+    auto found = std::find_if(objstores->begin(), objstores->end(), [&](const ObjStoreHandle& h) { return h.address == objstore_address; });
+    if (found != objstores->end()) {
+      objstoreid = static_cast<size_t>(found - objstores->begin());
+      break;
     }
-    if (objstoreid == std::numeric_limits<size_t>::max()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   RAY_CHECK_NEQ(objstoreid, std::numeric_limits<size_t>::max(), "object store with address " << objstore_address << " not yet registered");
-  WorkerId workerid;
-  {
-    auto workers = GET(workers_);
-    workerid = workers->size();
-    workers->push_back(WorkerHandle());
-    auto channel = grpc::CreateChannel(worker_address, grpc::InsecureChannelCredentials());
-    (*workers)[workerid].channel = channel;
-    (*workers)[workerid].objstoreid = objstoreid;
-    (*workers)[workerid].worker_stub = WorkerService::NewStub(channel);
-    (*workers)[workerid].worker_address = worker_address;
-    (*workers)[workerid].initialized = false;
-    if (is_driver) {
-      (*workers)[workerid].current_task = ROOT_OPERATION; // We use this field to identify which workers are drivers.
-    } else {
-      (*workers)[workerid].current_task = NO_OPERATION;
-    }
-  }
+  auto workers = GET(workers_);
+  auto worker = workers->insert(workers->end(), WorkerHandle());
+  workerid = static_cast<WorkerId>(worker - workers->begin());
+  worker->channel = grpc::CreateChannel(worker_address, grpc::InsecureChannelCredentials());
+  worker->objstoreid = objstoreid;
+  worker->worker_stub = WorkerService::NewStub(worker->channel);
+  worker->worker_address = worker_address;
+  worker->initialized = false;
+  worker->current_task = is_driver ? ROOT_OPERATION : NO_OPERATION;  // We use this field to identify which workers are drivers.
   return std::make_pair(workerid, objstoreid);
 }
 
@@ -651,11 +641,11 @@ void SchedulerService::get_info(const SchedulerInfoRequest& request, SchedulerIn
   auto reference_counts = GET(reference_counts_);
   auto target_objrefs = GET(target_objrefs_);
   auto function_table = reply->mutable_function_table();
-  for (int i = 0; i < reference_counts->size(); ++i) {
-    reply->add_reference_count((*reference_counts)[i]);
+  for (auto i = reference_counts->begin(); i != reference_counts->end(); ++i) {
+    reply->add_reference_count(*i);
   }
-  for (int i = 0; i < target_objrefs->size(); ++i) {
-    reply->add_target_objref((*target_objrefs)[i]);
+  for (auto i = target_objrefs->begin(); i != target_objrefs->end(); ++i) {
+    reply->add_target_objref(*i);
   }
   for (const auto& entry : *fntable) {
     (*function_table)[entry.first].set_num_return_vals(entry.second.num_return_vals());
@@ -691,28 +681,24 @@ bool SchedulerService::is_canonical(ObjRef objref) {
 void SchedulerService::perform_gets() {
   auto get_queue = GET(get_queue_);
   // Complete all get tasks that can be completed.
-  for (int i = 0; i < get_queue->size(); ++i) {
-    const std::pair<WorkerId, ObjRef>& get_request = (*get_queue)[i];
+  get_queue->erase(std::remove_if(get_queue->begin(), get_queue->end(), [&](const std::pair<WorkerId, ObjRef>& get_request) {
+    ObjStoreId objstoreid = get_store(get_request.first);
     ObjRef objref = get_request.second;
-    WorkerId workerid = get_request.first;
-    ObjStoreId objstoreid = get_store(workerid);
-    if (!has_canonical_objref(objref)) {
+    bool remove = has_canonical_objref(objref);
+    if (remove) {
+      ObjRef canonical_objref = get_canonical_objref(objref);
+      RAY_LOG(RAY_DEBUG, "attempting to get objref " << get_request.second << " with canonical objref " << canonical_objref << " to objstore " << objstoreid);
+      remove &= (*GET(objtable_))[canonical_objref].size() > 0;
+      if (remove) {
+        deliver_object_async_if_necessary(canonical_objref, pick_objstore(canonical_objref), objstoreid);
+        // Notify the relevant objstore about potential aliasing when it's ready
+        GET(alias_notification_queue_)->push_back(std::make_pair(objstoreid, std::make_pair(objref, canonical_objref)));
+      }
+    } else {
       RAY_LOG(RAY_ALIAS, "objref " << objref << " does not have a canonical_objref, so continuing");
-      continue;
     }
-    ObjRef canonical_objref = get_canonical_objref(objref);
-    RAY_LOG(RAY_DEBUG, "attempting to get objref " << get_request.second << " with canonical objref " << canonical_objref << " to objstore " << objstoreid);
-    int num_stores = (*GET(objtable_))[canonical_objref].size();
-    if (num_stores > 0) {
-      deliver_object_async_if_necessary(canonical_objref, pick_objstore(canonical_objref), objstoreid);
-      // Notify the relevant objstore about potential aliasing when it's ready
-      GET(alias_notification_queue_)->push_back(std::make_pair(objstoreid, std::make_pair(objref, canonical_objref)));
-      // Remove the get task from the queue
-      std::swap((*get_queue)[i], (*get_queue)[get_queue->size() - 1]);
-      get_queue->pop_back();
-      i -= 1;
-    }
-  }
+    return remove;
+  }), get_queue->end());
 }
 
 void SchedulerService::schedule_tasks_naively() {
@@ -733,7 +719,7 @@ void SchedulerService::schedule_tasks_naively() {
       if (std::binary_search(workers.begin(), workers.end(), workerid) && can_run(task)) {
         assign_task(operationid, workerid, computation_graph);
         task_queue->erase(it);
-        std::swap((*avail_workers)[i], (*avail_workers)[avail_workers->size() - 1]);
+        using std::swap; swap((*avail_workers)[i], (*avail_workers)[avail_workers->size() - 1]);
         avail_workers->pop_back();
         i -= 1;
         break;
@@ -784,7 +770,7 @@ void SchedulerService::schedule_tasks_location_aware() {
     if (bestit != task_queue->end()) {
       assign_task(*bestit, workerid, computation_graph);
       task_queue->erase(bestit);
-      std::swap((*avail_workers)[i], (*avail_workers)[avail_workers->size() - 1]);
+      using std::swap; swap((*avail_workers)[i], (*avail_workers)[avail_workers->size() - 1]);
       avail_workers->pop_back();
       i -= 1;
     }
@@ -793,18 +779,12 @@ void SchedulerService::schedule_tasks_location_aware() {
 
 void SchedulerService::perform_notify_aliases() {
   auto alias_notification_queue = GET(alias_notification_queue_);
-  for (int i = 0; i < alias_notification_queue->size(); ++i) {
-    const std::pair<WorkerId, std::pair<ObjRef, ObjRef> > alias_notification = (*alias_notification_queue)[i];
+  alias_notification_queue->erase(std::remove_if(alias_notification_queue->begin(), alias_notification_queue->end(), [&](const std::pair<WorkerId, std::pair<ObjRef, ObjRef> >& alias_notification) {
     ObjStoreId objstoreid = alias_notification.first;
     ObjRef alias_objref = alias_notification.second.first;
     ObjRef canonical_objref = alias_notification.second.second;
-    if (attempt_notify_alias(objstoreid, alias_objref, canonical_objref)) { // this locks both the objstore_ and objtable_
-      // the attempt to notify the objstore of the objref aliasing succeeded, so remove the notification task from the queue
-      std::swap((*alias_notification_queue)[i], (*alias_notification_queue)[alias_notification_queue->size() - 1]);
-      alias_notification_queue->pop_back();
-      i -= 1;
-    }
-  }
+    return attempt_notify_alias(objstoreid, alias_objref, canonical_objref); // this locks both the objstore_ and objtable_
+  }), alias_notification_queue->end());
 }
 
 bool SchedulerService::has_canonical_objref(ObjRef objref) {

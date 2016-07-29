@@ -273,7 +273,7 @@ void ObjStoreService::process_gets_for_objref(ObjRef objref) {
       ObjHandle& elem = memory_[objref].first;
       RAY_CHECK(send_queues_[get_queue_[i].first].send(&item.first), "error sending over IPC");
       // Remove the get task from the queue
-      std::swap(get_queue_[i], get_queue_[get_queue_.size() - 1]);
+      using std::swap; swap(get_queue_[i], get_queue_[get_queue_.size() - 1]);
       get_queue_.pop_back();
       i -= 1;
     }
