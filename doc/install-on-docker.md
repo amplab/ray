@@ -46,9 +46,50 @@ python test/array_test.py # This tests some array libraries.
 
 You are now ready to continue with the [Tutorial](tutorial.md).
 
+## Running examples in Docker
+
+Ray includes a Docker image that includes dependencies necessary for running some of the examples. This can be an easy way to see Ray in action on a variety of workloads.
+
+Launch the examples container.
+```
+docker run --shm-size=1024m -t -i amplab/ray:examples
+```
+
+### Hyperparameter optimization
+
+
+```
+cd ~/ray/examples/hyperopt/
+python driver.py
+```
+
+See the [Hyperparameter optimization documentation](../examples/hyperopt/README.md).
+
+### Batch L-BFGS
+
+```
+cd ~/ray/examples/lbfgs/
+python driver.py
+```
+
+See the [Batch L-BFGS documentation](../examples/lbfgs/README.md).
+
+### Learning to play Pong
+
+```
+cd ~/ray/examples/rl_pong/
+python driver.py
+```
+
+See the [Learning to play Pong documentation](../examples/rl_pong/README.md).
+
+
 ## Developing with Docker
 
 These steps apply only to Ray developers who prefer to use editing tools on the host machine while building and running Ray within Docker. If you have previously been building locally we suggest that you start with a clean checkout before building with Ray's developer Docker container.
+
+Please we have seen occasional errors while running `setup.sh` on Mac OS X. If you have this problem please try re-running the script. Increasing the memory of Docker's VM (say to 8GB from the default 2GB) seems to help.
+
 
 Launch the developer container.
 
@@ -63,5 +104,3 @@ cd ray
 ./setup.sh
 ./build.sh
 ```
-
-Please we have seen occasional errors while running `setup.sh` on Mac OS X. If you have this problem please try re-running the script.
