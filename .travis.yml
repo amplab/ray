@@ -8,5 +8,5 @@ services:
 script:
   - docker build --no-cache -t amplab/ray:base docker/base
   - docker ps -a
-  - docker run -d amplab/ray:base bash -c 'source setup-env.sh && cd test && python runtest.py && python array_test.py && python microbenchmarks.py'
+  - docker run amplab/ray:base bash -c 'source setup-env.sh && cd test && python runtest.py && python array_test.py && python microbenchmarks.py'
 
