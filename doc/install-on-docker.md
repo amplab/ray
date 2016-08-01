@@ -84,11 +84,11 @@ python driver.py
 See the [Learning to play Pong documentation](../examples/rl_pong/README.md).
 
 
-## Developing with Docker
+## Developing with Docker (Experimental)
 
 These steps apply only to Ray developers who prefer to use editing tools on the host machine while building and running Ray within Docker. If you have previously been building locally we suggest that you start with a clean checkout before building with Ray's developer Docker container.
 
-Please we have seen occasional errors while running `setup.sh` on Mac OS X. If you have this problem please try re-running the script. Increasing the memory of Docker's VM (say to 8GB from the default 2GB) seems to help.
+You may see errors while running `setup.sh` on Mac OS X. If you have this problem please try re-running the script. Increasing the memory of Docker's VM (say to 8GB from the default 2GB) seems to help.
 
 
 Launch the developer container.
