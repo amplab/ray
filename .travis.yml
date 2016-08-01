@@ -2,26 +2,11 @@ sudo: required
 
 language: generic
 
-matrix:
-  include:
-    - os: linux
-      dist: trusty
-    - os: osx
-      osx_image: xcode7
-
-before_install:
-  - if [[ $TRAVIS_OS_NAME == 'linux' ]]; then sudo apt-get -y update ; fi
-  - if [[ $TRAVIS_OS_NAME == 'linux' ]]; then sudo apt-get -y install git ; fi
-  - if [[ $TRAVIS_OS_NAME == 'linux' ]]; then sudo add-apt-repository --yes ppa:kalakris/cmake ; fi
-
-install:
-  - ./install-dependencies.sh
-  - ./setup.sh
-  - ./build.sh
+services:
+  - docker
 
 script:
-  - source setup-env.sh
-  - cd test
-  - python runtest.py
-  - python array_test.py
-  - python microbenchmarks.py
+  - docker build --no-cache -t amplab/ray:base docker/base
+  - docker ps -a
+  - docker run -d amplab/ray:base bash -c 'source setup-env.sh && cd test && python runtest.py && python array_test.py && python microbenchmarks.py'
+
