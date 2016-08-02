@@ -2,12 +2,18 @@ sudo: required
 
 language: generic
 
+matrix:
+  include:
+    - os: linux
+      dist: xenial
+
 services:
   - docker
 
 install:
   - sudo apt-get update
   - sudo apt-get install docker
+  - docker --version
   - tar --exclude './docker' -cv . > ./docker/test-base/ray.tar
   - docker build --shm-size=500m --no-cache -t amplab/ray:test-base docker/test-base
   - rm ./docker/test-base/ray.tar
