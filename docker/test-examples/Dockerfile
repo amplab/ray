@@ -1,4 +1,4 @@
-FROM amplab/ray:base
+FROM amplab/ray:test-base
 
 # Tensorflow
 RUN pip install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-0.9.0-cp27-none-linux_x86_64.whl

@@ -5,9 +5,15 @@ language: generic
 services:
   - docker
 
-script:
-  - docker build --no-cache -t amplab/ray:base docker/base
+install:
+  - tar --exclude './docker' --exclude './.git' -cv . > ./docker/test-base/ray.tar
+  - docker build --no-cache -t amplab/ray:test-base docker/test-base
+  - rm ./docker/test-base/ray.tar
+  - docker build --no-cache -t amplab/ray:test-examples docker/test-examples
   - docker ps -a
-  - docker run amplab/ray:base bash -c 'source setup-env.sh && cd test && python runtest.py && python array_test.py && python microbenchmarks.py'
-  - docker run amplab/ray:examples-base bash -c 'source setup-env.sh && cd examples/lbfgs && python drivery.py'
-  - docker run amplab/ray:examples-base bash -c 'source setup-env.sh && cd examples/hyperopt && python drivery.py'
+
+
+script:
+  - docker run amplab/ray:test-base bash -c 'source setup-env.sh && cd test && python runtest.py && python array_test.py && python microbenchmarks.py'
+  - docker run --shm-size=500m amplab/ray:test-examples bash -c 'source setup-env.sh && cd examples/lbfgs && python driver.py'
+  - docker run --shm-size=500m amplab/ray:test-examples bash -c 'source setup-env.sh && cd examples/hyperopt && python driver.py'
