@@ -2,27 +2,20 @@ sudo: required
 
 language: generic
 
-os: linux
-dist: trusty
+matrix:
+  include:
+    - os: linux
+      dist: trusty
+    - os: osx
+      osx_image: xcode7
 
 services:
   - docker
 
 install:
-  - sudo apt-get update
-  - sudo apt-get -y install apt-transport-https ca-certificates
-  - sudo apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D
-  - echo deb https://apt.dockerproject.org/repo ubuntu-trusty main | sudo tee --append /etc/apt/sources.list.d/docker.list
-  - sudo apt-get update
-  - sudo apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install docker-engine
-  - docker version
-  - tar --exclude './docker' -cv . > ./docker/test-base/ray.tar
-  - docker build --shm-size=500m --no-cache -t amplab/ray:test-base docker/test-base
-  - rm ./docker/test-base/ray.tar
-  - docker build --no-cache -t amplab/ray:test-examples docker/test-examples
-  - docker ps -a
+  - ./test/travis-ci/install.sh
 
 script:
-  - docker run amplab/ray:test-base bash -c 'source setup-env.sh && cd test && python runtest.py && python array_test.py && python microbenchmarks.py'
-  - docker run --shm-size=500m amplab/ray:test-examples bash -c 'source setup-env.sh && cd examples/lbfgs && python driver.py'
-  - docker run --shm-size=500m amplab/ray:test-examples bash -c 'source setup-env.sh && cd examples/hyperopt && python driver.py'
+  - ./test/travis-ci/base-_test.sh
+  - ./test/travis-ci/hyperopt_example.sh
+  - ./test/travis-ci/lbfgs_example.sh
