@@ -6,7 +6,6 @@ Ray can be used in several ways. In addition to running on a single machine, Ray
 is designed to run on a cluster of machines. This document is about how to use
 Ray on a cluster.
 
-
 ## Launching a cluster on EC2
 
 This section describes how to start a cluster on EC2. These instructions are
@@ -29,9 +28,9 @@ Access Credentials.
 ### Launching a Cluster
 
 - Install the required dependencies.
-```
-sudo pip install --upgrade boto
-```
+    ```
+    sudo pip install --upgrade boto
+    ```
 
 - Go into the `ray/scripts` directory.
 - Run `python ec2.py -k <keypair> -i <key-file> -s <num-slaves> launch
@@ -45,7 +44,13 @@ and `<cluster-name>` is the name to give to your cluster.
     ```bash
     export AWS_SECRET_ACCESS_KEY=AaBbCcDdEeFGgHhIiJjKkLlMmNnOoPpQqRrSsTtU
     export AWS_ACCESS_KEY_ID=ABCDEFG1234567890123
-    python ec2.py --key-pair=awskey --identity-file=awskey.pem --region=us-west-1 launch my-ray-cluster
+    python ec2.py --key-pair=awskey \
+                  --identity-file=awskey.pem \
+                  --region=us-west-1 \
+                  --instance-type=c4.4xlarge \
+                  --spot-price=2.50 \
+                  --slaves=1 \
+                  launch my-ray-cluster
     ```
 
 The following options are worth pointing out:
@@ -76,24 +81,30 @@ cluster. For example
         12.34.56.789
         12.34.567.89
 The first node in the file is the "head" node. The scheduler will be started on
-the head node, and the driver should run on the head node as well.
+the head node, and the driver should run on the head node as well. If the nodes
+have public and private IP addresses (as in the case of EC2 instances), you can
+list the `<public-ip-address>, <private-ip-address>` in `nodes.txt` like
+
+        12.34.56.789, 98.76.54.321
+        12.34.567.89, 98.76.543.21
+The `cluster.py` script will use the public IP addresses to ssh to the nodes,
+and Ray will use the private IP addresses to send messages between the nodes.
 
 2. Make sure that the nodes can all communicate with one another. On EC2, this
-can be done by creating a new security group and adding the inbound rule "all
-traffic" and adding the outbound rule "all traffic". Then add all of the nodes
-in your cluster to that security group.
+can be done by creating a new security group with the appropriate inbound and
+outbound rules and adding all of the nodes in your cluster to that security
+group. This is done automatically by the `ec2.py` script.
 
-3. Run something like
+3. From the `ray/scripts` directory, run something like
 
     ```
-    python cluster.py --nodes nodes.txt \
-                      --key-file key.pem \
-                      --username ubuntu \
-                      --installation-directory /home/ubuntu/
+    python cluster.py --nodes=nodes.txt \
+                      --key-file=awskey.pem \
+                      --username=ubuntu
     ```
-where you replace `nodes.txt`, `key.pem`, `ubuntu`, and `/home/ubuntu/` by the
-appropriate values. This assumes that you can connect to each IP address
-`<ip-address>` in `nodes.txt` with the command
+where you replace `nodes.txt`, `key.pem`, and `ubuntu` by the appropriate
+values. This assumes that you can connect to each IP address `<ip-address>` in
+`nodes.txt` with the command
     ```
     ssh -i <key-file> <username>@<ip-address>
     ```
@@ -102,23 +113,40 @@ cluster, run `cluster.install_ray()` in the interpreter. The interpreter should
 block until the installation has completed. The standard output from the nodes
 will be redirected to your terminal.
 5. To check that the installation succeeded, you can ssh to each node, cd into
-the directory `ray/test/`, and run the tests (e.g., `python runtest.py`).
-6. Start the cluster and deploy source code to it with the command `cluster.start_ray("~/example_ray_code")`. The argument is the local path to the directory that contains your Python code. This command will copy your source code to each node on the cluster, placing it in a directory on the PYTHONPATH. It will also start the Ray scheduler, object stores, and workers and before finishing it will print instructions for connecting to the cluster via ssh.
-7. To run a job on Ray ssh to the cluster's head node (as described by the output of the `cluster.start_ray` command. E.g., 
+the directory `$HOME/ray/`, and run the tests.
     ```
-      The cluster has been started. You can attach to the cluster by sshing to the head node with the following command.
+    source setup-env.sh  # Add Ray to your Python path.
+    python test/runtest.py  # This tests basic functionality.
+    python test/array_test.py  # This tests some array libraries.
+    ```
 
-          ssh -i /Users/me/aws/awskey.pem ubuntu@54.186.153.109
+6. Start the cluster with `cluster.start_ray()`. If you would like to deploy
+source code to it, you can pass in the local path to the directory that contains
+your Python code. For example, `cluster.start_ray("~/example_ray_code")`. This
+will copy your source code to each node on the cluster, placing it in a
+directory on the PYTHONPATH.
 
-      Then run the following commands.
+The `cluster.start_ray` command will start the Ray scheduler, object stores, and
+workers, and before finishing it will print instructions for connecting to the
+cluster via ssh.
 
-          cd /home/ubuntu/user_source_files/rl_pong
-          source /home/ubuntu/ray/setup-env.sh
+7. To connect to the cluster (either with a Python shell or with a script), ssh
+to the cluster's head node (as described by the output of the
+`cluster.start_ray` command. E.g.,
+    ```
+    The cluster has been started. You can attach to the cluster by sshing to the head node with the following command.
 
-      Then within a Python interpreter, run the following commands.
+        ssh -i awskey.pem ubuntu@12.34.56.789
 
-          import ray
-          ray.init(scheduler_address="172.31.14.236:10001", objstore_address="172.31.14.236:20001", driver_address="172.31.14.236:30001")
+    Then run the following commands.
+
+        cd $HOME/ray
+        source $HOME/ray/setup-env.sh  # Add Ray to your Python path.
+
+    Then within a Python interpreter, run the following commands.
+
+        import ray
+        ray.init(scheduler_address="98.76.54.321:10001", objstore_address="98.76.54.321:20001", driver_address="98.76.54.321:30001")
     ```
 
 7. Note that there are several more commands that can be run from within
@@ -133,7 +161,3 @@ the directory `ray/test/`, and run the tests (e.g., `python runtest.py`).
       processes).
     - `cluster.update_ray()` - This pulls the latest Ray source code and builds
       it.
-
-Once you've started a Ray cluster using the above instructions, to actually use
-Ray, ssh to the head node (the first node listed in the `nodes.txt` file) and
-attach a shell to the already running cluster.
