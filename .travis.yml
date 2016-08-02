@@ -16,6 +16,6 @@ install:
   - ./test/travis-ci/install.sh
 
 script:
-  - ./test/travis-ci/base-_test.sh
+  - ./test/travis-ci/base_test.sh
   - ./test/travis-ci/hyperopt_example.sh
   - ./test/travis-ci/lbfgs_example.sh
