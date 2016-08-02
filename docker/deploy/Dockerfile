@@ -1,3 +1,6 @@
+# The deploy Docker image build a self-contained Ray instance suitable
+# for end users.
+
 FROM ubuntu:xenial
 RUN apt-get update
 RUN apt-get -y install apt-utils
