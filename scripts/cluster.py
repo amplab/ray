@@ -225,11 +225,11 @@ class RayCluster(object):
     """Update the user's source code on each node in the cluster.
 
     This method is used to update the user's source code on each node in the
-    cluster. The local user_source_directory will be copied under ray_source_files in
-    the ray installation directory on the worker node. For example, if the ray
-    installation directory is "/d/e/f" and we call _update_source_code("~/a/b/c"),
-    then the contents of "~/a/b/c" on the local machine will be copied to
-    "/d/e/f/user_source_files/c" on each node in the cluster.
+    cluster. The local user_source_directory will be copied under
+    ray_source_files in the home directory on the worker node. For example, if
+    we call _update_source_code("~/a/b/c"), then the contents of "~/a/b/c" on
+    the local machine will be copied to "~/user_source_files/c" on each
+    node in the cluster.
 
     Args:
       user_source_directory (str): The path on the local machine to the directory
@@ -244,7 +244,7 @@ class RayCluster(object):
       raise Exception("Directory {} does not exist.".format(user_source_directory))
     # If user_source_directory is "/a/b/c", then local_directory_name is "c".
     local_directory_name = os.path.split(os.path.realpath(user_source_directory))[1]
-    remote_directory = os.path.join(self.installation_directory, "user_source_files", local_directory_name)
+    remote_directory = os.path.join("user_source_files", local_directory_name)
     # Remove and recreate the directory on the node.
     recreate_directory_command = """
       rm -r "{}";

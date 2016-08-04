@@ -21,13 +21,14 @@ permissions for the private key file to `600` (i.e. only you can read and write
 it) so that `ssh` will work.
 - Whenever you want to use the `ec2.py` script, set the environment variables
 `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` to your Amazon EC2 access key ID
-and secret access key. These can be obtained from the [AWS
-homepage](http://aws.amazon.com/) by clicking Account > Security Credentials >
-Access Credentials.
+and secret access key. These can be generated from the [AWS
+homepage](http://aws.amazon.com/) by clicking My Account > Security Credentials >
+Access Keys, or by [creating an IAM user](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html).
 
 ### Launching a Cluster
 
-- Install the required dependencies.
+- Install the required dependencies on the machine you will be using to run the
+cluster launch scripts.
     ```
     sudo pip install --upgrade boto
     ```
@@ -66,6 +67,9 @@ capacity in one zone, and you should try to launch in another.
 - `--spot-price=<price>` will launch the worker nodes as [Spot
 Instances](http://aws.amazon.com/ec2/spot-instances/), bidding for the given
 maximum price (in dollars).
+- `--slaves=<num-slaves>` will launch a cluster with `(1 + num_slaves)` instances.
+The first instance is the head node, which in addition to hosting workers runs the
+Ray scheduler and application driver programs.
 
 ## Getting started with Ray on a cluster
 
@@ -87,13 +91,15 @@ list the `<public-ip-address>, <private-ip-address>` in `nodes.txt` like
 
         12.34.56.789, 98.76.54.321
         12.34.567.89, 98.76.543.21
-The `cluster.py` script will use the public IP addresses to ssh to the nodes,
-and Ray will use the private IP addresses to send messages between the nodes.
+The `cluster.py` administrative script will use the public IP addresses to ssh
+to the nodes. Ray will use the private IP addresses to send messages between the
+nodes during execution.
 
 2. Make sure that the nodes can all communicate with one another. On EC2, this
 can be done by creating a new security group with the appropriate inbound and
 outbound rules and adding all of the nodes in your cluster to that security
-group. This is done automatically by the `ec2.py` script.
+group. This is done automatically by the `ec2.py` script. If you have used the
+`ec2.py` script you can log into the hosts with the username `ubuntu`.
 
 3. From the `ray/scripts` directory, run something like
 
@@ -112,9 +118,10 @@ values. This assumes that you can connect to each IP address `<ip-address>` in
 cluster, run `cluster.install_ray()` in the interpreter. The interpreter should
 block until the installation has completed. The standard output from the nodes
 will be redirected to your terminal.
-5. To check that the installation succeeded, you can ssh to each node, cd into
-the directory `$HOME/ray/`, and run the tests.
+5. To check that the installation succeeded, you can ssh to each node and run
+the tests.
     ```
+    cd $HOME/ray/
     source setup-env.sh  # Add Ray to your Python path.
     python test/runtest.py  # This tests basic functionality.
     python test/array_test.py  # This tests some array libraries.
