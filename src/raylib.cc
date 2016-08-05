@@ -715,7 +715,10 @@ static PyObject* wait_for_next_message(PyObject* self, PyObject* args) {
       PyTuple_SetItem(t, 1, deserialize_task(worker_capsule, message->task()));
     } else if (function_present) {
       PyTuple_SetItem(t, 0, PyString_FromString("function"));
-      PyTuple_SetItem(t, 1, PyString_FromStringAndSize(message->function().implementation().data(), static_cast<ssize_t>(message->function().implementation().size())));
+      PyObject* remote_function_data = PyTuple_New(2);
+      PyTuple_SetItem(remote_function_data, 0, PyString_FromStringAndSize(message->function().name().data(), static_cast<ssize_t>(message->function().name().size())));
+      PyTuple_SetItem(remote_function_data, 1, PyString_FromStringAndSize(message->function().implementation().data(), static_cast<ssize_t>(message->function().implementation().size())));
+      PyTuple_SetItem(t, 1, remote_function_data);
     } else if (reusable_variable_present) {
       PyTuple_SetItem(t, 0, PyString_FromString("reusable_variable"));
       PyObject* reusable_variable = PyTuple_New(3);
@@ -734,14 +737,15 @@ static PyObject* wait_for_next_message(PyObject* self, PyObject* args) {
   Py_RETURN_NONE;
 }
 
-static PyObject* export_function(PyObject* self, PyObject* args) {
+static PyObject* export_remote_function(PyObject* self, PyObject* args) {
   Worker* worker;
+  const char* function_name;
   const char* function;
   int function_size;
-  if (!PyArg_ParseTuple(args, "O&s#", &PyObjectToWorker, &worker, &function, &function_size)) {
+  if (!PyArg_ParseTuple(args, "O&ss#", &PyObjectToWorker, &worker, &function_name, &function, &function_size)) {
     return NULL;
   }
-  if (worker->export_function(std::string(function, static_cast<size_t>(function_size)))) {
+  if (worker->export_remote_function(std::string(function_name), std::string(function, static_cast<size_t>(function_size)))) {
     Py_RETURN_TRUE;
   } else {
     Py_RETURN_FALSE;
@@ -795,25 +799,65 @@ static PyObject* submit_task(PyObject* self, PyObject* args) {
 
 static PyObject* notify_task_completed(PyObject* self, PyObject* args) {
   Worker* worker;
-  PyObject* task_succeeded_obj;
-  const char* error_message_ptr;
-  if (!PyArg_ParseTuple(args, "O&Os", &PyObjectToWorker, &worker, &task_succeeded_obj, &error_message_ptr)) {
+  if (!PyArg_ParseTuple(args, "O&", &PyObjectToWorker, &worker)) {
     return NULL;
   }
-  std::string error_message(error_message_ptr);
-  bool task_succeeded = PyObject_IsTrue(task_succeeded_obj);
-  worker->notify_task_completed(task_succeeded, error_message);
+  worker->notify_task_completed();
   Py_RETURN_NONE;
 }
 
-static PyObject* register_function(PyObject* self, PyObject* args) {
+static PyObject* register_remote_function(PyObject* self, PyObject* args) {
   Worker* worker;
   const char* function_name;
   int num_return_vals;
   if (!PyArg_ParseTuple(args, "O&si", &PyObjectToWorker, &worker, &function_name, &num_return_vals)) {
     return NULL;
   }
-  worker->register_function(std::string(function_name), num_return_vals);
+  worker->register_remote_function(std::string(function_name), num_return_vals);
+  Py_RETURN_NONE;
+}
+
+static PyObject* notify_task_failure(PyObject* self, PyObject* args) {
+  Worker* worker;
+  const char* function_name;
+  const char* error_message;
+  if (!PyArg_ParseTuple(args, "O&ss", &PyObjectToWorker, &worker, &function_name, &error_message)) {
+    return NULL;
+  }
+  worker->notify_failure(FailedType::FailedTask, std::string(function_name), std::string(error_message));
+  Py_RETURN_NONE;
+}
+
+static PyObject* notify_remote_function_import_failure(PyObject* self, PyObject* args) {
+  Worker* worker;
+  const char* remote_function_name;
+  const char* error_message;
+  if (!PyArg_ParseTuple(args, "O&ss", &PyObjectToWorker, &worker, &remote_function_name, &error_message)) {
+    return NULL;
+  }
+  worker->notify_failure(FailedType::FailedRemoteFunctionImport, std::string(remote_function_name), std::string(error_message));
+  Py_RETURN_NONE;
+}
+
+static PyObject* notify_reusable_variable_import_failure(PyObject* self, PyObject* args) {
+  Worker* worker;
+  const char* reusable_variable_name;
+  const char* error_message;
+  if (!PyArg_ParseTuple(args, "O&ss", &PyObjectToWorker, &worker, &reusable_variable_name, &error_message)) {
+    return NULL;
+  }
+  worker->notify_failure(FailedType::FailedReusableVariableImport, std::string(reusable_variable_name), std::string(error_message));
+  Py_RETURN_NONE;
+}
+
+static PyObject* notify_reinitialize_reusable_variable_failure(PyObject* self, PyObject* args) {
+  Worker* worker;
+  const char* remote_function_name;
+  const char* error_message;
+  if (!PyArg_ParseTuple(args, "O&ss", &PyObjectToWorker, &worker, &remote_function_name, &error_message)) {
+    return NULL;
+  }
+  worker->notify_failure(FailedType::FailedReinitializeReusableVariable, std::string(remote_function_name), std::string(error_message));
   Py_RETURN_NONE;
 }
 
@@ -887,10 +931,12 @@ static PyObject* alias_objectids(PyObject* self, PyObject* args) {
 
 static PyObject* start_worker_service(PyObject* self, PyObject* args) {
   Worker* worker;
-  if (!PyArg_ParseTuple(args, "O&", &PyObjectToWorker, &worker)) {
+  PyObject* is_driver;
+  PyObject* surpress_error_messages;
+  if (!PyArg_ParseTuple(args, "O&OO", &PyObjectToWorker, &worker, &is_driver, &surpress_error_messages)) {
     return NULL;
   }
-  worker->start_worker_service();
+  worker->start_worker_service(PyObject_IsTrue(is_driver), PyObject_IsTrue(surpress_error_messages));
   Py_RETURN_NONE;
 }
 
@@ -917,6 +963,15 @@ static PyObject* scheduler_info(PyObject* self, PyObject* args) {
   set_dict_item_and_transfer_ownership(dict, PyString_FromString("target_objectids"), target_objectid_list);
   set_dict_item_and_transfer_ownership(dict, PyString_FromString("reference_counts"), reference_count_list);
   return dict;
+}
+
+static PyObject* failure_to_dict(const Failure& failure) {
+  PyObject* failure_dict = PyDict_New();
+  set_dict_item_and_transfer_ownership(failure_dict, PyString_FromString("workerid"), PyInt_FromLong(failure.workerid()));
+  set_dict_item_and_transfer_ownership(failure_dict, PyString_FromString("worker_address"), PyString_FromStringAndSize(failure.worker_address().data(), failure.worker_address().size()));
+  set_dict_item_and_transfer_ownership(failure_dict, PyString_FromString("function_name"), PyString_FromStringAndSize(failure.name().data(), failure.name().size()));
+  set_dict_item_and_transfer_ownership(failure_dict, PyString_FromString("error_message"), PyString_FromStringAndSize(failure.error_message().data(), failure.error_message().size()));
+  return failure_dict;
 }
 
 static PyObject* task_info(PyObject* self, PyObject* args) {
@@ -950,10 +1005,27 @@ static PyObject* task_info(PyObject* self, PyObject* args) {
     PyList_SetItem(running_tasks_list, i, info_dict);
   }
 
+  PyObject* failed_remote_function_imports = PyList_New(reply.failed_remote_function_import_size());
+  for (size_t i = 0; i < reply.failed_remote_function_import_size(); ++i) {
+    PyList_SetItem(failed_remote_function_imports, i, failure_to_dict(reply.failed_remote_function_import(i)));
+  }
+
+  PyObject* failed_reusable_variable_imports = PyList_New(reply.failed_reusable_variable_import_size());
+  for (size_t i = 0; i < reply.failed_reusable_variable_import_size(); ++i) {
+    PyList_SetItem(failed_reusable_variable_imports, i, failure_to_dict(reply.failed_reusable_variable_import(i)));
+  }
+
+  PyObject* failed_reinitialize_reusable_variables = PyList_New(reply.failed_reinitialize_reusable_variable_size());
+  for (size_t i = 0; i < reply.failed_reinitialize_reusable_variable_size(); ++i) {
+    PyList_SetItem(failed_reinitialize_reusable_variables, i, failure_to_dict(reply.failed_reinitialize_reusable_variable(i)));
+  }
+
   PyObject* dict = PyDict_New();
   set_dict_item_and_transfer_ownership(dict, PyString_FromString("failed_tasks"), failed_tasks_list);
   set_dict_item_and_transfer_ownership(dict, PyString_FromString("running_tasks"), running_tasks_list);
-  set_dict_item_and_transfer_ownership(dict, PyString_FromString("num_succeeded"), PyInt_FromLong(reply.num_succeeded()));
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("failed_remote_function_imports"), failed_remote_function_imports);
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("failed_reusable_variable_imports"), failed_reusable_variable_imports);
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("failed_reinitialize_reusable_variables"), failed_reinitialize_reusable_variables);
   return dict;
 }
 
@@ -1008,7 +1080,11 @@ static PyMethodDef RayLibMethods[] = {
  { "create_worker", create_worker, METH_VARARGS, "connect to the scheduler and the object store" },
  { "disconnect", disconnect, METH_VARARGS, "disconnect the worker from the scheduler and the object store" },
  { "connected", connected, METH_VARARGS, "check if the worker is connected to the scheduler and the object store" },
- { "register_function", register_function, METH_VARARGS, "register a function with the scheduler" },
+ { "register_remote_function", register_remote_function, METH_VARARGS, "register a function with the scheduler" },
+ { "notify_task_failure", notify_task_failure, METH_VARARGS, "notify the scheduler that a task failed" },
+ { "notify_remote_function_import_failure", notify_remote_function_import_failure, METH_VARARGS, "notify the scheduler that a remote function failed to import" },
+ { "notify_reusable_variable_import_failure", notify_reusable_variable_import_failure, METH_VARARGS, "notify the scheduler that a reusable variable failed to import" },
+ { "notify_reinitialize_reusable_variable_failure", notify_reinitialize_reusable_variable_failure, METH_VARARGS, "notify the scheduler that an attempt to reinitialize a reusable variable failed" },
  { "put_object", put_object, METH_VARARGS, "put a protocol buffer object (given as a capsule) on the local object store" },
  { "get_object", get_object, METH_VARARGS, "get protocol buffer object from the local object store" },
  { "get_objectid", get_objectid, METH_VARARGS, "register a new object reference with the scheduler" },
@@ -1019,8 +1095,8 @@ static PyMethodDef RayLibMethods[] = {
  { "notify_task_completed", notify_task_completed, METH_VARARGS, "notify the scheduler that a task has been completed" },
  { "start_worker_service", start_worker_service, METH_VARARGS, "start the worker service" },
  { "scheduler_info", scheduler_info, METH_VARARGS, "get info about scheduler state" },
- { "task_info", task_info, METH_VARARGS, "get task statuses" },
- { "export_function", export_function, METH_VARARGS, "export function to workers" },
+ { "task_info", task_info, METH_VARARGS, "get information about task statuses and failures" },
+ { "export_remote_function", export_remote_function, METH_VARARGS, "export a remote function to workers" },
  { "export_reusable_variable", export_reusable_variable, METH_VARARGS, "export a reusable variable to the workers" },
  { "dump_computation_graph", dump_computation_graph, METH_VARARGS, "dump the current computation graph to a file" },
  { "set_log_config", set_log_config, METH_VARARGS, "set filename for raylib logging" },
