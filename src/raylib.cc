@@ -817,47 +817,15 @@ static PyObject* register_remote_function(PyObject* self, PyObject* args) {
   Py_RETURN_NONE;
 }
 
-static PyObject* notify_task_failure(PyObject* self, PyObject* args) {
+static PyObject* notify_failure(PyObject* self, PyObject* args) {
   Worker* worker;
-  const char* function_name;
+  const char* name;
   const char* error_message;
-  if (!PyArg_ParseTuple(args, "O&ss", &PyObjectToWorker, &worker, &function_name, &error_message)) {
+  FailedType type;
+  if (!PyArg_ParseTuple(args, "O&ssi", &PyObjectToWorker, &worker, &name, &error_message, &type)) {
     return NULL;
   }
-  worker->notify_failure(FailedType::FailedTask, std::string(function_name), std::string(error_message));
-  Py_RETURN_NONE;
-}
-
-static PyObject* notify_remote_function_import_failure(PyObject* self, PyObject* args) {
-  Worker* worker;
-  const char* remote_function_name;
-  const char* error_message;
-  if (!PyArg_ParseTuple(args, "O&ss", &PyObjectToWorker, &worker, &remote_function_name, &error_message)) {
-    return NULL;
-  }
-  worker->notify_failure(FailedType::FailedRemoteFunctionImport, std::string(remote_function_name), std::string(error_message));
-  Py_RETURN_NONE;
-}
-
-static PyObject* notify_reusable_variable_import_failure(PyObject* self, PyObject* args) {
-  Worker* worker;
-  const char* reusable_variable_name;
-  const char* error_message;
-  if (!PyArg_ParseTuple(args, "O&ss", &PyObjectToWorker, &worker, &reusable_variable_name, &error_message)) {
-    return NULL;
-  }
-  worker->notify_failure(FailedType::FailedReusableVariableImport, std::string(reusable_variable_name), std::string(error_message));
-  Py_RETURN_NONE;
-}
-
-static PyObject* notify_reinitialize_reusable_variable_failure(PyObject* self, PyObject* args) {
-  Worker* worker;
-  const char* remote_function_name;
-  const char* error_message;
-  if (!PyArg_ParseTuple(args, "O&ss", &PyObjectToWorker, &worker, &remote_function_name, &error_message)) {
-    return NULL;
-  }
-  worker->notify_failure(FailedType::FailedReinitializeReusableVariable, std::string(remote_function_name), std::string(error_message));
+  worker->notify_failure(type, std::string(name), std::string(error_message));
   Py_RETURN_NONE;
 }
 
@@ -931,12 +899,11 @@ static PyObject* alias_objectids(PyObject* self, PyObject* args) {
 
 static PyObject* start_worker_service(PyObject* self, PyObject* args) {
   Worker* worker;
-  PyObject* is_driver;
-  PyObject* surpress_error_messages;
-  if (!PyArg_ParseTuple(args, "O&OO", &PyObjectToWorker, &worker, &is_driver, &surpress_error_messages)) {
+  Mode mode;
+  if (!PyArg_ParseTuple(args, "O&i", &PyObjectToWorker, &worker, &mode)) {
     return NULL;
   }
-  worker->start_worker_service(PyObject_IsTrue(is_driver), PyObject_IsTrue(surpress_error_messages));
+  worker->start_worker_service(mode);
   Py_RETURN_NONE;
 }
 
@@ -1081,10 +1048,7 @@ static PyMethodDef RayLibMethods[] = {
  { "disconnect", disconnect, METH_VARARGS, "disconnect the worker from the scheduler and the object store" },
  { "connected", connected, METH_VARARGS, "check if the worker is connected to the scheduler and the object store" },
  { "register_remote_function", register_remote_function, METH_VARARGS, "register a function with the scheduler" },
- { "notify_task_failure", notify_task_failure, METH_VARARGS, "notify the scheduler that a task failed" },
- { "notify_remote_function_import_failure", notify_remote_function_import_failure, METH_VARARGS, "notify the scheduler that a remote function failed to import" },
- { "notify_reusable_variable_import_failure", notify_reusable_variable_import_failure, METH_VARARGS, "notify the scheduler that a reusable variable failed to import" },
- { "notify_reinitialize_reusable_variable_failure", notify_reinitialize_reusable_variable_failure, METH_VARARGS, "notify the scheduler that an attempt to reinitialize a reusable variable failed" },
+ { "notify_failure", notify_failure, METH_VARARGS, "notify the scheduler of a failure" },
  { "put_object", put_object, METH_VARARGS, "put a protocol buffer object (given as a capsule) on the local object store" },
  { "get_object", get_object, METH_VARARGS, "get protocol buffer object from the local object store" },
  { "get_objectid", get_objectid, METH_VARARGS, "register a new object reference with the scheduler" },
@@ -1122,6 +1086,20 @@ PyMODINIT_FUNC initlibraylib(void) {
   PyModule_AddObject(m, "ray_error", RayError);
   PyModule_AddObject(m, "ray_size_error", RaySizeError);
   import_array();
+
+  // Export constants used for the worker mode types so they can be accessed
+  // from Python. The Mode enum is defined in worker.h.
+  PyModule_AddIntConstant(m, "SCRIPT_MODE", Mode::SCRIPT_MODE);
+  PyModule_AddIntConstant(m, "WORKER_MODE", Mode::WORKER_MODE);
+  PyModule_AddIntConstant(m, "PYTHON_MODE", Mode::PYTHON_MODE);
+  PyModule_AddIntConstant(m, "SILENT_MODE", Mode::SILENT_MODE);
+
+  // Export constants for the failure types so they can be accessed from Python.
+  // The FailedType enum is defined in types.proto.
+  PyModule_AddIntConstant(m, "FailedTask", FailedType::FailedTask);
+  PyModule_AddIntConstant(m, "FailedRemoteFunctionImport", FailedType::FailedRemoteFunctionImport);
+  PyModule_AddIntConstant(m, "FailedReusableVariableImport", FailedType::FailedReusableVariableImport);
+  PyModule_AddIntConstant(m, "FailedReinitializeReusableVariable", FailedType::FailedReinitializeReusableVariable);
 }
 
 }

@@ -23,9 +23,14 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::ClientWriter;
 
+// These three constants are used to define the mode that a worker is running
+// in. Right now, this is mostly used for determining how to print information
+// about task failures.
+enum Mode {SCRIPT_MODE, WORKER_MODE, PYTHON_MODE, SILENT_MODE};
+
 class WorkerServiceImpl final : public WorkerService::Service {
 public:
-  WorkerServiceImpl(const std::string& worker_address, bool is_driver, bool surpress_error_messages);
+  WorkerServiceImpl(const std::string& worker_address, Mode mode);
   Status ExecuteTask(ServerContext* context, const ExecuteTaskRequest* request, AckReply* reply) override;
   Status ImportRemoteFunction(ServerContext* context, const ImportRemoteFunctionRequest* request, AckReply* reply) override;
   Status Die(ServerContext* context, const DieRequest* request, AckReply* reply) override;
@@ -36,8 +41,7 @@ private:
   MessageQueue<WorkerMessage*> send_queue_;
   // This is true if the worker service is part of a driver process and false
   // if it is part of a worker process.
-  bool is_driver_;
-  bool surpress_error_messages_;
+  Mode mode_;
 };
 
 class Worker {
@@ -84,7 +88,7 @@ class Worker {
   // workers, these commands are stored in the message queue, which is read by
   // the Python interpreter. For drivers, these commands are only for printing
   // error messages.
-  void start_worker_service(bool is_driver, bool surpress_error_messages);
+  void start_worker_service(Mode mode);
   // wait for next task from the RPC system. If null, it means there are no more tasks and the worker should shut down.
   std::unique_ptr<WorkerMessage> receive_next_message();
   // tell the scheduler that we are done with the current task and request the

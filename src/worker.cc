@@ -9,15 +9,14 @@ extern "C" {
   static PyObject *RayError;
 }
 
-inline WorkerServiceImpl::WorkerServiceImpl(const std::string& worker_address, bool is_driver, bool surpress_error_messages)
+inline WorkerServiceImpl::WorkerServiceImpl(const std::string& worker_address, Mode mode)
   : worker_address_(worker_address),
-    is_driver_(is_driver),
-    surpress_error_messages_(surpress_error_messages) {
+    mode_(mode) {
   RAY_CHECK(send_queue_.connect(worker_address_, false), "error connecting send_queue_");
 }
 
 Status WorkerServiceImpl::ExecuteTask(ServerContext* context, const ExecuteTaskRequest* request, AckReply* reply) {
-  RAY_CHECK(!is_driver_, "ExecuteTask can only be called on workers.");
+  RAY_CHECK(mode_ == Mode::WORKER_MODE, "ExecuteTask can only be called on workers.");
   RAY_LOG(RAY_INFO, "invoked task " << request->task().name());
   std::unique_ptr<WorkerMessage> message(new WorkerMessage());
   message->mutable_task()->CopyFrom(request->task());
@@ -30,7 +29,7 @@ Status WorkerServiceImpl::ExecuteTask(ServerContext* context, const ExecuteTaskR
 }
 
 Status WorkerServiceImpl::ImportRemoteFunction(ServerContext* context, const ImportRemoteFunctionRequest* request, AckReply* reply) {
-  RAY_CHECK(!is_driver_, "ImportRemoteFunction can only be called on workers.");
+  RAY_CHECK(mode_ == Mode::WORKER_MODE, "ImportRemoteFunction can only be called on workers.");
   std::unique_ptr<WorkerMessage> message(new WorkerMessage());
   message->mutable_function()->CopyFrom(request->function());
   RAY_LOG(RAY_INFO, "importing function");
@@ -43,7 +42,7 @@ Status WorkerServiceImpl::ImportRemoteFunction(ServerContext* context, const Imp
 }
 
 Status WorkerServiceImpl::ImportReusableVariable(ServerContext* context, const ImportReusableVariableRequest* request, AckReply* reply) {
-  RAY_CHECK(!is_driver_, "ImportReusableVariable can only be called on workers.");
+  RAY_CHECK(mode_ == Mode::WORKER_MODE, "ImportReusableVariable can only be called on workers.");
   std::unique_ptr<WorkerMessage> message(new WorkerMessage());
   message->mutable_reusable_variable()->CopyFrom(request->reusable_variable());
   RAY_LOG(RAY_INFO, "importing reusable variable");
@@ -56,15 +55,15 @@ Status WorkerServiceImpl::ImportReusableVariable(ServerContext* context, const I
 }
 
 Status WorkerServiceImpl::Die(ServerContext* context, const DieRequest* request, AckReply* reply) {
-  RAY_CHECK(!is_driver_, "Die can only be called on workers.");
+  RAY_CHECK(mode_ == Mode::WORKER_MODE, "Die can only be called on workers.");
   WorkerMessage* message_ptr = NULL;
   RAY_CHECK(send_queue_.send(&message_ptr), "error sending over IPC");
   return Status::OK;
 }
 
 Status WorkerServiceImpl::PrintErrorMessage(ServerContext* context, const PrintErrorMessageRequest* request, AckReply* reply) {
-  RAY_CHECK(is_driver_, "PrintErrorMessage can only be called on drivers.");
-  if (surpress_error_messages_) {
+  RAY_CHECK(mode_ != Mode::WORKER_MODE, "PrintErrorMessage can only be called on drivers.");
+  if (mode_ == Mode::SILENT_MODE) {
     // Do not log error messages in this case. This is just used for the tests.
     return Status::OK;
   }
@@ -427,17 +426,17 @@ void Worker::export_reusable_variable(const std::string& name, const std::string
 // queue. This is because the Python interpreter needs to be single threaded
 // (in our case running in the main thread), whereas the WorkerService will
 // run in a separate thread and potentially utilize multiple threads.
-void Worker::start_worker_service(bool is_driver, bool surpress_error_messages) {
+void Worker::start_worker_service(Mode mode) {
   const char* service_addr = worker_address_.c_str();
   // Launch a new thread for running the worker service. We store this as a
   // field so that we can clean it up when we disconnect the worker.
-  worker_server_thread_ = std::unique_ptr<std::thread>(new std::thread([this, service_addr, is_driver, surpress_error_messages]() {
+  worker_server_thread_ = std::unique_ptr<std::thread>(new std::thread([this, service_addr, mode]() {
     std::string service_address(service_addr);
     std::string::iterator split_point = split_ip_address(service_address);
     std::string port;
     port.assign(split_point, service_address.end());
     // Create the worker service.
-    WorkerServiceImpl service(service_address, is_driver, surpress_error_messages);
+    WorkerServiceImpl service(service_address, mode);
     ServerBuilder builder;
     builder.AddListeningPort(std::string("0.0.0.0:") + port, grpc::InsecureServerCredentials());
     builder.RegisterService(&service);
@@ -445,7 +444,7 @@ void Worker::start_worker_service(bool is_driver, bool surpress_error_messages) 
     RAY_LOG(RAY_INFO, "worker server listening on " << service_address);
     // If this is part of a worker process (and not a driver process), then tell
     // the scheduler that it is ready to start receiving tasks.
-    if (!is_driver) {
+    if (mode == Mode::WORKER_MODE) {
       ClientContext context;
       ReadyForNewTaskRequest request;
       request.set_workerid(workerid_);
