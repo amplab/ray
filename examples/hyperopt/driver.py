@@ -2,7 +2,6 @@
 # https://www.tensorflow.org/versions/r0.9/tutorials/mnist/pros/index.html#build-a-multilayer-convolutional-network
 import numpy as np
 import ray
-import os
 
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data

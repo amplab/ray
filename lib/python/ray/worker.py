@@ -939,6 +939,9 @@ def main_loop(worker=global_worker):
       else:
         _logger().info("Reached the end of the if-else loop in the main loop. This should be unreachable.")
         assert False, "This code should be unreachable."
+    except Exception as e:
+      error_message = traceback.format_exc()
+      _logger().info(error_message)
     finally:
       # Allow releasing the variables BEFORE we wait for the next message or exit the block
       del command_args

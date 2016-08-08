@@ -138,6 +138,23 @@ class RayCluster(object):
     """.format(self.installation_directory, self.installation_directory)
     self.run_command_over_ssh_on_all_nodes_in_parallel(install_ray_command)
 
+  def install_example_dependencies(self):
+    """Install the dependencies needed to run the example applications.
+
+    This method will ssh to each node and install the depencies. In particular,
+    it will install the following.
+      - TensorFlow
+      - Gym
+      - SciPy
+    """
+    install_example_dependencies_command = """
+      sudo pip install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-0.9.0-cp27-none-linux_x86_64.whl;
+      sudo pip install scipy;
+      sudo apt-get -y install zlib1g-dev libjpeg-dev xvfb libav-tools xorg-dev python-opengl libsdl2-dev swig wget;
+      sudo pip install gym[atari]
+    """
+    self._run_command_over_ssh_on_all_nodes_in_parallel(install_example_dependencies_command)
+
   def start_ray(self, user_source_directory=None, num_workers_per_node=10):
     """Start Ray on a cluster.
 
@@ -169,7 +186,7 @@ class RayCluster(object):
     # Start the workers on each node
     # The triple backslashes are used for two rounds of escaping, something like \\\" -> \" -> "
     start_workers_commands = []
-    remote_user_source_directory_str = "\\\"{}\\\"".format(remote_user_source_directory) if user_source_directory is not None else "None"
+    remote_user_source_directory_str = "\\\"{}\\\"".format(os.path.join("$HOME", remote_user_source_directory)) if user_source_directory is not None else "None"
     for i, node_ip_address in enumerate(self.node_ip_addresses):
       start_workers_command = """
         cd "{}";
@@ -180,7 +197,7 @@ class RayCluster(object):
     self.run_command_over_ssh_on_all_nodes_in_parallel(start_workers_commands)
 
     setup_env_path = os.path.join(self.installation_directory, "ray/setup-env.sh")
-    cd_location = remote_user_source_directory if user_source_directory is not None else os.path.join(self.installation_directory, "ray")
+    cd_location = os.path.join("$HOME", remote_user_source_directory) if user_source_directory is not None else os.path.join(self.installation_directory, "ray")
     print """
       The cluster has been started. You can attach to the cluster by sshing to the head node with the following command.
 
