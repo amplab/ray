@@ -24,6 +24,7 @@
 # For further examples see this project's .travis.yml
 #
 
+# Argument parsing adapted from http://stackoverflow.com/a/14203146
 for i in "$@"
 do
 TEST_COMMAND=''
