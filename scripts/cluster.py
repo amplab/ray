@@ -158,15 +158,17 @@ class RayCluster(object):
 
     scripts_directory = os.path.join(self.installation_directory, "ray/scripts")
     # Start the scheduler
+    # Generate a random port for the scheduler.
+    scheduler_address = address(node_private_ip_addresses[0], np.random.randint(10000, 65536))
     # The triple backslashes are used for two rounds of escaping, something like \\\" -> \" -> "
     start_scheduler_command = """
       cd "{}";
       source ../setup-env.sh;
-      python -c "import ray; ray.services.start_scheduler(\\\"{}:10001\\\", cleanup=False)" > start_scheduler.out 2> start_scheduler.err < /dev/null &
-    """.format(scripts_directory, self.node_private_ip_addresses[0])
+      python -c "import ray; ray.services.start_scheduler(\\\"{}\\\", cleanup=False)" > start_scheduler.out 2> start_scheduler.err < /dev/null &
+    """.format(scripts_directory, scheduler_address)
     self._run_command_over_ssh(self.node_ip_addresses[0], start_scheduler_command)
 
-    # Start the workers on each node
+    # Start the workers on each node.
     # The triple backslashes are used for two rounds of escaping, something like \\\" -> \" -> "
     start_workers_commands = []
     remote_user_source_directory_str = "\\\"{}\\\"".format(remote_user_source_directory) if user_source_directory is not None else "None"
@@ -174,8 +176,8 @@ class RayCluster(object):
       start_workers_command = """
         cd "{}";
         source ../setup-env.sh;
-        python -c "import ray; ray.services.start_node(\\\"{}:10001\\\", \\\"{}\\\", {}, user_source_directory={})" > start_workers.out 2> start_workers.err < /dev/null &
-      """.format(scripts_directory, self.node_private_ip_addresses[0], self.node_private_ip_addresses[i], num_workers_per_node, remote_user_source_directory_str)
+        python -c "import ray; ray.services.start_node(\\\"{}\\\", \\\"{}\\\", {}, user_source_directory={})" > start_workers.out 2> start_workers.err < /dev/null &
+      """.format(scripts_directory, scheduler_address, self.node_private_ip_addresses[i], num_workers_per_node, remote_user_source_directory_str)
       start_workers_commands.append(start_workers_command)
     self.run_command_over_ssh_on_all_nodes_in_parallel(start_workers_commands)
 
@@ -194,8 +196,8 @@ class RayCluster(object):
       Then within a Python interpreter or script, run the following commands.
 
           import ray
-          ray.init(node_ip_address="{}", scheduler_address="{}:10001")
-    """.format(self.key_file, self.username, self.node_ip_addresses[0], cd_location, setup_env_path, self.node_private_ip_addresses[0], self.node_private_ip_addresses[0])
+          ray.init(node_ip_address="{}", scheduler_address="{}")
+    """.format(self.key_file, self.username, self.node_ip_addresses[0], cd_location, setup_env_path, self.node_private_ip_addresses[0], scheduler_address)
 
   def stop_ray(self):
     """Kill all of the processes in the Ray cluster.

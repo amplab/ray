@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import subprocess32 as subprocess
+import socket
 
 # Ray modules
 import config
@@ -19,17 +20,12 @@ TIMEOUT_SECONDS = 5
 def address(host, port):
   return host + ":" + str(port)
 
-scheduler_port_counter = 0
-def new_scheduler_port():
-  global scheduler_port_counter
-  scheduler_port_counter += 1
-  return 10000 + scheduler_port_counter
-
-objstore_port_counter = 0
-def new_objstore_port():
-  global objstore_port_counter
-  objstore_port_counter += 1
-  return 20000 + objstore_port_counter
+def unused_port():
+  dummy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  dummy.bind(("127.0.0.1", 0))
+  port = dummy.getsockname()[1]
+  dummy.close()
+  return port
 
 def cleanup():
   """When running in local mode, shutdown the Ray processes.
@@ -139,7 +135,7 @@ def start_node(scheduler_address, node_ip_address, num_workers, worker_path=None
     cleanup (bool): If cleanup is True, then the processes started by this
       command will be killed when the process that imported services exits.
   """
-  objstore_address = address(node_ip_address, new_objstore_port())
+  objstore_address = address(node_ip_address, unused_port())
   start_objstore(scheduler_address, objstore_address, cleanup=cleanup)
   time.sleep(0.2)
   if worker_path is None:
@@ -188,13 +184,13 @@ def start_ray_local(node_ip_address="127.0.0.1", num_objstores=1, num_workers=0,
     worker_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../scripts/default_worker.py")
   if num_workers > 0 and num_objstores < 1:
     raise Exception("Attempting to start a cluster with {} workers per object store, but `num_objstores` is {}.".format(num_objstores))
-  scheduler_address = address(node_ip_address, new_scheduler_port())
+  scheduler_address = address(node_ip_address, unused_port())
   start_scheduler(scheduler_address, cleanup=True)
   time.sleep(0.1)
   objstore_addresses = []
   # create objstores
   for i in range(num_objstores):
-    objstore_address = address(node_ip_address, new_objstore_port())
+    objstore_address = address(node_ip_address, unused_port())
     objstore_addresses.append(objstore_address)
     start_objstore(scheduler_address, objstore_address, cleanup=True)
     time.sleep(0.2)
