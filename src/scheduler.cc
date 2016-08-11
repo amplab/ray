@@ -957,7 +957,7 @@ void SchedulerService::deallocate_object(ObjectID canonical_objectid, const MySy
       request.set_canonical_objectid(canonical_objectid);
       ObjStoreId objstoreid = locations[i];
       RAY_LOG(RAY_REFCOUNT, "Attempting to deallocate canonical_objectid " << canonical_objectid << " from objstore " << objstoreid);
-      (*objstores)[objstoreid].objstore_stub->DeallocateObject(&context, request, &reply);
+      RAY_CHECK_GRPC((*objstores)[objstoreid].objstore_stub->DeallocateObject(&context, request, &reply));
     }
     locations.clear();
   }

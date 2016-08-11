@@ -137,18 +137,19 @@ void Worker::register_worker(const std::string& node_ip_address, const std::stri
   request.set_objstore_address(objstore_address);
   request.set_is_driver(is_driver);
   RegisterWorkerReply reply;
-  grpc::StatusCode status_code = grpc::UNAVAILABLE;
+  Status status;
   // TODO: HACK: retrying is a hack
   for (int i = 0; i < 5; ++i) {
     ClientContext context;
-    status_code = scheduler_stub_->RegisterWorker(&context, request, &reply).error_code();
-    if (status_code != grpc::UNAVAILABLE) {
+    status = scheduler_stub_->RegisterWorker(&context, request, &reply);
+    if (status.error_code() != grpc::UNAVAILABLE) {
       break;
     }
     // Note that each pass through the loop may take substantially longer than
     // retry_wait_milliseconds because grpc may do its own retrying.
     std::this_thread::sleep_for(std::chrono::milliseconds(retry_wait_milliseconds));
   }
+  RAY_CHECK_GRPC(status);
   workerid_ = reply.workerid();
   objstoreid_ = reply.objstoreid();
   objstore_address_ = reply.objstore_address();
