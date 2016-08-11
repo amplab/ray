@@ -9,6 +9,7 @@ import funcsigs
 import numpy as np
 import colorama
 import atexit
+import threading
 
 # Ray modules
 import config
@@ -663,6 +664,10 @@ def init(start_ray_local=False, num_workers=None, num_objstores=None, scheduler_
   # to disconnect will happen in the call to cleanup() when the Python script
   # exits.
   connect(node_ip_address, scheduler_address, worker=global_worker, mode=driver_mode)
+  
+  if driver_mode != raylib.WORKER_MODE:
+    t = threading.Thread(target=_error_polling)
+    t.start()
 
 def cleanup(worker=global_worker):
   """Disconnect the driver, and terminate any processes started in init.
@@ -986,6 +991,12 @@ def _export_reusable_variable(name, reusable, worker=global_worker):
   if _mode(worker) not in [raylib.SCRIPT_MODE, raylib.SILENT_MODE]:
     raise Exception("_export_reusable_variable can only be called on a driver.")
   raylib.export_reusable_variable(worker.handle, name, pickling.dumps(reusable.initializer), pickling.dumps(reusable.reinitializer))
+  
+def _error_polling(worker=global_worker):
+  curr_num_errors = 0
+  while True:
+    time.sleep(0.5)
+    info = task_info(worker)
 
 def remote(arg_types, return_types, worker=global_worker):
   """This decorator is used to create remote functions.

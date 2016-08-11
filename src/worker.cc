@@ -100,18 +100,18 @@ Worker::Worker(const std::string& node_ip_address, const std::string& scheduler_
   // Start the worker service. This will find an unused port which is stored in
   // worker_port_. This also sets up a message queue between the worker and the
   // worker service.
-  start_worker_service(mode_);
+  if (mode_ == Mode::WORKER_MODE)
+    start_worker_service(mode_);
 }
 
 
 SubmitTaskReply Worker::submit_task(SubmitTaskRequest* request, int max_retries, int retry_wait_milliseconds) {
   RAY_CHECK(connected_, "Attempted to perform submit_task but failed.");
   SubmitTaskReply reply;
-  Status status;
   request->set_workerid(workerid_);
   for (int i = 0; i < 1 + max_retries; ++i) {
     ClientContext context;
-    status = scheduler_stub_->SubmitTask(&context, *request, &reply);
+    RAY_CHECK_GRPC(scheduler_stub_->SubmitTask(&context, *request, &reply));
     if (reply.function_registered()) {
       break;
     }
@@ -124,7 +124,7 @@ SubmitTaskReply Worker::submit_task(SubmitTaskRequest* request, int max_retries,
 bool Worker::kill_workers(ClientContext &context) {
   KillWorkersRequest request;
   KillWorkersReply reply;
-  Status status = scheduler_stub_->KillWorkers(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->KillWorkers(&context, request, &reply));
   return reply.success();
 }
 
@@ -173,7 +173,7 @@ void Worker::request_object(ObjectID objectid) {
   request.set_objectid(objectid);
   AckReply reply;
   ClientContext context;
-  Status status = scheduler_stub_->RequestObj(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->RequestObj(&context, request, &reply));
   return;
 }
 
@@ -184,7 +184,7 @@ ObjectID Worker::get_objectid() {
   request.set_workerid(workerid_);
   PutObjReply reply;
   ClientContext context;
-  Status status = scheduler_stub_->PutObj(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->PutObj(&context, request, &reply));
   return reply.objectid();
 }
 
@@ -240,7 +240,7 @@ void Worker::put_object(ObjectID objectid, const Obj* obj, std::vector<ObjectID>
   }
   AckReply reply;
   ClientContext context;
-  scheduler_stub_->AddContainedObjectIDs(&context, contained_objectids_request, &reply);
+   RAY_CHECK_GRPC(scheduler_stub_->AddContainedObjectIDs(&context, contained_objectids_request, &reply));
 }
 
 #define CHECK_ARROW_STATUS(s, msg)                              \
@@ -322,7 +322,7 @@ void Worker::alias_objectids(ObjectID alias_objectid, ObjectID target_objectid) 
   request.set_alias_objectid(alias_objectid);
   request.set_target_objectid(target_objectid);
   AckReply reply;
-  scheduler_stub_->AliasObjectIDs(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->AliasObjectIDs(&context, request, &reply));
 }
 
 void Worker::increment_reference_count(std::vector<ObjectID> &objectids) {
@@ -338,7 +338,7 @@ void Worker::increment_reference_count(std::vector<ObjectID> &objectids) {
       request.add_objectid(objectids[i]);
     }
     AckReply reply;
-    scheduler_stub_->IncrementRefCount(&context, request, &reply);
+    RAY_CHECK_GRPC(scheduler_stub_->IncrementRefCount(&context, request, &reply));
   }
 }
 
@@ -355,7 +355,7 @@ void Worker::decrement_reference_count(std::vector<ObjectID> &objectids) {
       request.add_objectid(objectids[i]);
     }
     AckReply reply;
-    scheduler_stub_->DecrementRefCount(&context, request, &reply);
+    RAY_CHECK_GRPC(scheduler_stub_->DecrementRefCount(&context, request, &reply));
   }
 }
 
@@ -367,7 +367,7 @@ void Worker::register_remote_function(const std::string& name, size_t num_return
   request.set_function_name(name);
   request.set_num_return_vals(num_return_vals);
   AckReply reply;
-  scheduler_stub_->RegisterRemoteFunction(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->RegisterRemoteFunction(&context, request, &reply));
 }
 
 void Worker::notify_failure(FailedType type, const std::string& name, const std::string& error_message) {
@@ -380,7 +380,7 @@ void Worker::notify_failure(FailedType type, const std::string& name, const std:
   request.mutable_failure()->set_name(name);
   request.mutable_failure()->set_error_message(error_message);
   AckReply reply;
-  scheduler_stub_->NotifyFailure(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->NotifyFailure(&context, request, &reply));
 }
 
 std::unique_ptr<WorkerMessage> Worker::receive_next_message() {
@@ -395,27 +395,29 @@ void Worker::ready_for_new_task() {
   ReadyForNewTaskRequest request;
   request.set_workerid(workerid_);
   AckReply reply;
-  scheduler_stub_->ReadyForNewTask(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->ReadyForNewTask(&context, request, &reply));
 }
 
 void Worker::disconnect() {
   connected_ = false;
-  // Shut down the worker service. This will cause the call to server->Wait() to
-  // return.
-  server_ptr_->Shutdown();
-  // Wait for the thread that launched the worker service to return.
-  worker_server_thread_.join();
+  if (mode_ == Mode::WORKER_MODE) {
+    // Shut down the worker service. This will cause the call to server->Wait() to
+    // return.
+    // server_ptr_->Shutdown();
+    // Wait for the thread that launched the worker service to return.
+    // worker_server_thread_.join();
+  }
 }
 
 // TODO(rkn): Should we be using pointers or references? And should they be const?
 void Worker::scheduler_info(ClientContext &context, SchedulerInfoRequest &request, SchedulerInfoReply &reply) {
   RAY_CHECK(connected_, "Attempted to get scheduler info but failed.");
-  scheduler_stub_->SchedulerInfo(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->SchedulerInfo(&context, request, &reply));
 }
 
 void Worker::task_info(ClientContext &context, TaskInfoRequest &request, TaskInfoReply &reply) {
   RAY_CHECK(connected_, "Attempted to get worker info but failed.");
-  scheduler_stub_->TaskInfo(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->TaskInfo(&context, request, &reply));
 }
 
 bool Worker::export_remote_function(const std::string& function_name, const std::string& function) {
@@ -425,7 +427,7 @@ bool Worker::export_remote_function(const std::string& function_name, const std:
   request.mutable_function()->set_name(function_name);
   request.mutable_function()->set_implementation(function);
   AckReply reply;
-  Status status = scheduler_stub_->ExportRemoteFunction(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->ExportRemoteFunction(&context, request, &reply));
   return true;
 }
 
@@ -437,7 +439,7 @@ void Worker::export_reusable_variable(const std::string& name, const std::string
   request.mutable_reusable_variable()->mutable_initializer()->set_implementation(initializer);
   request.mutable_reusable_variable()->mutable_reinitializer()->set_implementation(reinitializer);
   AckReply reply;
-  Status status = scheduler_stub_->ExportReusableVariable(&context, request, &reply);
+  RAY_CHECK_GRPC(scheduler_stub_->ExportReusableVariable(&context, request, &reply));
 }
 
 // Communication between the WorkerServer and the Worker happens via a message
