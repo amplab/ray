@@ -716,27 +716,40 @@ void SchedulerService::get_info(const SchedulerInfoRequest& request, SchedulerIn
   auto avail_workers = GET(avail_workers_);
   auto task_queue = GET(task_queue_);
   auto reference_counts = GET(reference_counts_);
+  auto objstores = GET(objstores_);
   auto target_objectids = GET(target_objectids_);
   auto function_table = reply->mutable_function_table();
+  // Return info about the reference counts.
   for (int i = 0; i < reference_counts->size(); ++i) {
     reply->add_reference_count((*reference_counts)[i]);
   }
+  // Return info about the target objectids.
   for (int i = 0; i < target_objectids->size(); ++i) {
     reply->add_target_objectid((*target_objectids)[i]);
   }
+  // Return info about the function table.
   for (const auto& entry : *fntable) {
     (*function_table)[entry.first].set_num_return_vals(entry.second.num_return_vals());
     for (const WorkerId& worker : entry.second.workers()) {
       (*function_table)[entry.first].add_workerid(worker);
     }
   }
+  // Return info about the task queue.
   for (const auto& entry : *task_queue) {
     reply->add_operationid(entry);
   }
+  // Return info about the available workers.
   for (const WorkerId& entry : *avail_workers) {
     reply->add_avail_worker(entry);
   }
+  // Return info about the computation graph.
   computation_graph->to_protobuf(reply->mutable_computation_graph());
+  // Return info about the object stores.
+  for (int i = 0; i < objstores->size(); ++i) {
+    ObjstoreData* objstore_data = reply->add_objstore();
+    objstore_data->set_objstoreid(i);
+    objstore_data->set_address((*objstores)[i].address);
+  }
 }
 
 // pick_objstore must be called with a canonical_objectid

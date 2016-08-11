@@ -920,18 +920,36 @@ static PyObject* scheduler_info(PyObject* self, PyObject* args) {
   SchedulerInfoReply reply;
   worker->scheduler_info(context, request, reply);
 
+  // Unpack the target object reference information.
   PyObject* target_objectid_list = PyList_New(reply.target_objectid_size());
   for (size_t i = 0; i < reply.target_objectid_size(); ++i) {
     PyList_SetItem(target_objectid_list, i, PyInt_FromLong(reply.target_objectid(i)));
   }
+  // Unpack the reference count information.
   PyObject* reference_count_list = PyList_New(reply.reference_count_size());
   for (size_t i = 0; i < reply.reference_count_size(); ++i) {
     PyList_SetItem(reference_count_list, i, PyInt_FromLong(reply.reference_count(i)));
   }
+  // Unpack the available worker information.
+  PyObject* available_worker_list = PyList_New(reply.avail_worker_size());
+  for (size_t i = 0; i < reply.avail_worker_size(); ++i) {
+    PyList_SetItem(available_worker_list, i, PyInt_FromLong(reply.avail_worker(i)));
+  }
+  // Unpack the object store information.
+  PyObject* objstore_list = PyList_New(reply.objstore_size());
+  for (size_t i = 0; i < reply.objstore_size(); ++i) {
+    PyObject* objstore_data = PyDict_New();
+    set_dict_item_and_transfer_ownership(objstore_data, PyString_FromString("objstoreid"), PyInt_FromLong(reply.objstore(i).objstoreid()));
+    set_dict_item_and_transfer_ownership(objstore_data, PyString_FromString("address"), PyString_FromStringAndSize(reply.objstore(i).address().data(), reply.objstore(i).address().size()));
+    PyList_SetItem(objstore_list, i, objstore_data);
+  }
 
+  // Store the unpacked values in a dictionary to return.
   PyObject* dict = PyDict_New();
   set_dict_item_and_transfer_ownership(dict, PyString_FromString("target_objectids"), target_objectid_list);
   set_dict_item_and_transfer_ownership(dict, PyString_FromString("reference_counts"), reference_count_list);
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("available_workers"), available_worker_list);
+  set_dict_item_and_transfer_ownership(dict, PyString_FromString("objstores"), objstore_list);
   return dict;
 }
 
