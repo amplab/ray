@@ -398,7 +398,7 @@ class TestFailures(unittest.TestCase):
       def __call__(self):
         return
     ray.remote([], [])(Foo())
-    time.sleep(0.1)
+    time.sleep(1)
     self.assertTrue("There is a problem here." in ray.task_info()["failed_remote_function_imports"][0]["error_message"])
 
   def test_fail_importing_reusable_variable(self):
@@ -409,7 +409,7 @@ class TestFailures(unittest.TestCase):
         raise Exception("The initializer failed.")
       return 0
     ray.reusables.foo = ray.Reusable(initializer)
-    time.sleep(0.1)
+    time.sleep(1)
     # Check that the error message is in the task info.
     self.assertTrue("The initializer failed." in ray.task_info()["failed_reusable_variable_imports"][0]["error_message"])
 
@@ -423,7 +423,7 @@ class TestFailures(unittest.TestCase):
     def use_foo():
       ray.reusables.foo
     use_foo.remote()
-    time.sleep(0.1)
+    time.sleep(1)
     # Check that the error message is in the task info.
     self.assertTrue("The reinitializer failed." in ray.task_info()["failed_reinitialize_reusable_variables"][0]["error_message"])
 
