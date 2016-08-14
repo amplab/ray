@@ -398,7 +398,7 @@ class TestFailures(unittest.TestCase):
       def __call__(self):
         return
     ray.remote([], [])(Foo())
-    time.sleep(0.1)
+    time.sleep(1)
     self.assertTrue("There is a problem here." in ray.task_info()["failed_remote_function_imports"][0]["error_message"])
 
   def test_fail_importing_reusable_variable(self):
@@ -409,7 +409,7 @@ class TestFailures(unittest.TestCase):
         raise Exception("The initializer failed.")
       return 0
     ray.reusables.foo = ray.Reusable(initializer)
-    time.sleep(0.1)
+    time.sleep(1)
     # Check that the error message is in the task info.
     self.assertTrue("The initializer failed." in ray.task_info()["failed_reusable_variable_imports"][0]["error_message"])
 
@@ -423,7 +423,7 @@ class TestFailures(unittest.TestCase):
     def use_foo():
       ray.reusables.foo
     use_foo.remote()
-    time.sleep(0.1)
+    time.sleep(1)
     # Check that the error message is in the task info.
     self.assertTrue("The reinitializer failed." in ray.task_info()["failed_reinitialize_reusable_variables"][0]["error_message"])
 
@@ -643,6 +643,7 @@ class TestAttachingToCluster(unittest.TestCase):
     scheduler_port = np.random.randint(40000, 50000)
     scheduler_address = "{}:{}".format(node_ip_address, scheduler_port)
     ray.services.start_scheduler(scheduler_address, cleanup=True)
+    time.sleep(0.1)
     ray.services.start_node(scheduler_address, node_ip_address, num_workers=1, cleanup=True)
     ray.init(node_ip_address=node_ip_address, scheduler_address=scheduler_address)
     @ray.remote([int], [int])
@@ -661,6 +662,7 @@ class TestAttachingToClusterWithMultipleObjectStores(unittest.TestCase):
     scheduler_port = np.random.randint(40000, 50000)
     scheduler_address = "{}:{}".format(node_ip_address, scheduler_port)
     ray.services.start_scheduler(scheduler_address, cleanup=True)
+    time.sleep(0.1)
     ray.services.start_node(scheduler_address, node_ip_address, num_workers=5, cleanup=True)
     ray.services.start_node(scheduler_address, node_ip_address, num_workers=5, cleanup=True)
     ray.services.start_node(scheduler_address, node_ip_address, num_workers=5, cleanup=True)

@@ -665,12 +665,12 @@ static PyObject* create_worker(PyObject* self, PyObject* args) {
   // The object store address can be the empty string, in which case the
   // scheduler will choose the object store address.
   const char* objstore_address;
-  Mode mode;
+  int mode;
   if (!PyArg_ParseTuple(args, "sssi", &node_ip_address, &scheduler_address, &objstore_address, &mode)) {
     return NULL;
   }
-  bool is_driver = (mode != Mode::WORKER_MODE);
-  Worker* worker = new Worker(std::string(node_ip_address), std::string(scheduler_address), mode);
+  bool is_driver = (static_cast<Mode>(mode) != Mode::WORKER_MODE);
+  Worker* worker = new Worker(std::string(node_ip_address), std::string(scheduler_address), static_cast<Mode>(mode));
   worker->register_worker(std::string(node_ip_address), std::string(objstore_address), is_driver);
 
   PyObject* t = PyTuple_New(2);
@@ -824,11 +824,11 @@ static PyObject* notify_failure(PyObject* self, PyObject* args) {
   Worker* worker;
   const char* name;
   const char* error_message;
-  FailedType type;
+  int type;
   if (!PyArg_ParseTuple(args, "O&ssi", &PyObjectToWorker, &worker, &name, &error_message, &type)) {
     return NULL;
   }
-  worker->notify_failure(type, std::string(name), std::string(error_message));
+  worker->notify_failure(static_cast<FailedType>(type), std::string(name), std::string(error_message));
   Py_RETURN_NONE;
 }
 
@@ -902,11 +902,11 @@ static PyObject* alias_objectids(PyObject* self, PyObject* args) {
 
 static PyObject* start_worker_service(PyObject* self, PyObject* args) {
   Worker* worker;
-  Mode mode;
+  int mode;
   if (!PyArg_ParseTuple(args, "O&i", &PyObjectToWorker, &worker, &mode)) {
     return NULL;
   }
-  worker->start_worker_service(mode);
+  worker->start_worker_service(static_cast<Mode>(mode));
   Py_RETURN_NONE;
 }
 

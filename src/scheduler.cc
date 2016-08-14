@@ -204,6 +204,7 @@ Status SchedulerService::RegisterObjStore(ServerContext* context, const Register
   auto objtable = GET(objtable_); // to protect objects_in_transit_
   auto objstores = GET(objstores_);
   ObjStoreId objstoreid = objstores->size();
+  RAY_LOG(RAY_INFO, "Registering an object store with address " << request->objstore_address());
   auto channel = grpc::CreateChannel(request->objstore_address(), grpc::InsecureChannelCredentials());
   objstores->push_back(ObjStoreHandle());
   (*objstores)[objstoreid].address = request->objstore_address();
@@ -328,7 +329,7 @@ Status SchedulerService::NotifyFailure(ServerContext* context, const NotifyFailu
         PrintErrorMessageRequest print_request;
         print_request.mutable_failure()->CopyFrom(request->failure());
         AckReply print_reply;
-        RAY_CHECK_GRPC(worker->worker_stub->PrintErrorMessage(&client_context, print_request, &print_reply));
+        // RAY_CHECK_GRPC(worker->worker_stub->PrintErrorMessage(&client_context, print_request, &print_reply));
       }
     }
   }
@@ -565,6 +566,7 @@ void SchedulerService::deliver_object_async_if_necessary(ObjectID canonical_obje
 //
 // deliver_object_async assumes that the aliasing for objectid has already been completed. That is, has_canonical_objectid(objectid) == true
 void SchedulerService::deliver_object_async(ObjectID canonical_objectid, ObjStoreId from, ObjStoreId to) {
+  RAY_LOG(RAY_INFO, "Asking object store with id " << from << " to deliver object with id " << canonical_objectid << " to object store with id " << to);
   RAY_CHECK_NEQ(from, to, "attempting to deliver canonical_objectid " << canonical_objectid << " from objstore " << from << " to itself.");
   RAY_CHECK(is_canonical(canonical_objectid), "attempting to deliver objectid " << canonical_objectid << ", but this objectid is not a canonical objectid.");
   {
@@ -601,12 +603,12 @@ void SchedulerService::assign_task(OperationId operationid, WorkerId workerid, c
   // assign_task takes computation_graph as an argument, which is obtained by
   // GET(computation_graph_), so we know that the data structure has been
   // locked.
+  RAY_LOG(RAY_INFO, "Assigning task with operationid " << operationid << " to worker with id " << workerid);
   ObjStoreId objstoreid = get_store(workerid);
   const Task& task = computation_graph->get_task(operationid);
   ClientContext context;
   ExecuteTaskRequest request;
   AckReply reply;
-  RAY_LOG(RAY_INFO, "starting to send arguments");
   for (size_t i = 0; i < task.arg_size(); ++i) {
     if (!task.arg(i).has_obj()) {
       ObjectID objectid = task.arg(i).id();
