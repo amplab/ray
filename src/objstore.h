@@ -37,12 +37,7 @@ enum MemoryStatusType {READY = 0, NOT_READY = 1, DEALLOCATED = 2, NOT_PRESENT = 
 
 class ObjStoreService final : public ObjStore::Service {
 public:
-  ObjStoreService(const std::string& scheduler_address);
-  // Create the scheduler stub, register the object store with the scheduler,
-  // and create a message queue for workers to connect to.
-  void register_objstore();
-  // Set the object store address.
-  void set_objstore_address(const std::string& objstore_address) { objstore_address_ = objstore_address; }
+  ObjStoreService(std::shared_ptr<Channel> scheduler_channel);
 
   Status StartDelivery(ServerContext* context, const StartDeliveryRequest* request, AckReply* reply) override;
   Status StreamObjTo(ServerContext* context, const StreamObjToRequest* request, ServerWriter<ObjChunk>* writer) override;
@@ -50,6 +45,7 @@ public:
   Status DeallocateObject(ServerContext* context, const DeallocateObjectRequest* request, AckReply* reply) override;
   Status ObjStoreInfo(ServerContext* context, const ObjStoreInfoRequest* request, ObjStoreInfoReply* reply) override;
   void start_objstore_service();
+  void register_objstore(const std::string& objstore_address, const std::string& recv_queue_name);
 private:
   void get_data_from(ObjectID objectid, ObjStore::Stub& stub);
   // check if we already connected to the other objstore, if yes, return reference to connection, otherwise connect
@@ -62,7 +58,6 @@ private:
   void object_ready(ObjectID objectid, size_t metadata_offset);
 
   static const size_t CHUNK_SIZE;
-  std::string scheduler_address_;
   std::string objstore_address_;
   ObjStoreId objstoreid_; // id of this objectstore in the scheduler object store table
   std::shared_ptr<MemorySegmentPool> segmentpool_;
@@ -74,6 +69,8 @@ private:
   std::unique_ptr<Scheduler::Stub> scheduler_stub_;
   std::vector<std::pair<WorkerId, ObjectID> > get_queue_;
   std::mutex get_queue_lock_;
+  // The name of the recv_queue_.
+  std::string recv_queue_name_;
   MessageQueue<ObjRequest> recv_queue_; // This queue is used by workers to send tasks to the object store.
   std::vector<MessageQueue<ObjHandle> > send_queues_; // This maps workerid -> queue. The object store uses these queues to send replies to the relevant workers.
   std::thread communicator_thread_;

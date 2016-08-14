@@ -93,6 +93,7 @@ MemorySegmentPool::MemorySegmentPool(ObjStoreId objstoreid, std::string& objstor
 void MemorySegmentPool::open_segment(SegmentId segmentid, size_t size) {
   RAY_LOG(RAY_DEBUG, "Opening segmentid " << segmentid << " on object store " << objstoreid_ << " with port " << objstore_port_ << " with create_mode_ = " << create_mode_);
   RAY_CHECK(segmentid == segments_.size() || !create_mode_, "Object store " << objstoreid_ << " with port " << objstore_port_ << " is attempting to open segmentid " << segmentid << " on the object store, but segments_.size() = " << segments_.size());
+
   if (segmentid >= segments_.size()) { // resize and initialize segments_
     int current_size = segments_.size();
     segments_.resize(segmentid + 1);

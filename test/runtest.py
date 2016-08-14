@@ -363,7 +363,10 @@ class TaskStatusTest(unittest.TestCase):
     test_functions.test_alias_f.remote()
     test_functions.throw_exception_fct1.remote()
     test_functions.throw_exception_fct1.remote()
-    time.sleep(1)
+    for _ in range(100): # Retry if we need to wait longer.
+      if len(ray.task_info()["failed_tasks"]) >= 2:
+        break
+      time.sleep(0.1)
     result = ray.task_info()
     self.assertEqual(len(result["failed_tasks"]), 2)
     task_ids = set()
@@ -393,6 +396,7 @@ class TaskStatusTest(unittest.TestCase):
 
     ray.worker.cleanup()
 
+  # @unittest.skip("This test is currently disabled because it fails on Travis.")
   def testFailImportingRemoteFunction(self):
     ray.init(start_ray_local=True, num_workers=2, driver_mode=ray.SILENT_MODE)
 
@@ -411,7 +415,10 @@ class TaskStatusTest(unittest.TestCase):
       def __call__(self):
         return
     ray.remote([], [])(Foo())
-    time.sleep(0.1)
+    for _ in range(100): # Retry if we need to wait longer.
+      if len(ray.task_info()["failed_remote_function_imports"]) >= 1:
+        break
+      time.sleep(0.1)
     self.assertTrue("There is a problem here." in ray.task_info()["failed_remote_function_imports"][0]["error_message"])
 
     ray.worker.cleanup()
@@ -426,7 +433,10 @@ class TaskStatusTest(unittest.TestCase):
         raise Exception("The initializer failed.")
       return 0
     ray.reusables.foo = ray.Reusable(initializer)
-    time.sleep(0.1)
+    for _ in range(100): # Retry if we need to wait longer.
+      if len(ray.task_info()["failed_reusable_variable_imports"]) >= 1:
+        break
+      time.sleep(0.1)
     # Check that the error message is in the task info.
     self.assertTrue("The initializer failed." in ray.task_info()["failed_reusable_variable_imports"][0]["error_message"])
 
@@ -444,7 +454,10 @@ class TaskStatusTest(unittest.TestCase):
     def use_foo():
       ray.reusables.foo
     use_foo.remote()
-    time.sleep(0.1)
+    for _ in range(100): # Retry if we need to wait longer.
+      if len(ray.task_info()["failed_reinitialize_reusable_variables"]) >= 1:
+        break
+      time.sleep(0.1)
     # Check that the error message is in the task info.
     self.assertTrue("The reinitializer failed." in ray.task_info()["failed_reinitialize_reusable_variables"][0]["error_message"])
 
@@ -580,13 +593,38 @@ class PythonCExtensionTest(unittest.TestCase):
     ray.init(start_ray_local=True, num_workers=1)
 
     # Make sure that we aren't accidentally messing up Python's reference counts.
-    for obj in [None, True, False]:
-      @ray.remote([], [int])
-      def f():
-        return sys.getrefcount(obj)
-      first_count = ray.get(f.remote())
-      second_count = ray.get(f.remote())
-      self.assertEqual(first_count, second_count)
+    @ray.remote([], [int])
+    def f():
+      return sys.getrefcount(None)
+    first_count = ray.get(f.remote())
+    second_count = ray.get(f.remote())
+    self.assertEqual(first_count, second_count)
+
+    ray.worker.cleanup()
+
+  def testReferenceCountNone(self):
+    ray.init(start_ray_local=True, num_workers=1)
+
+    # Make sure that we aren't accidentally messing up Python's reference counts.
+    @ray.remote([], [int])
+    def f():
+      return sys.getrefcount(True)
+    first_count = ray.get(f.remote())
+    second_count = ray.get(f.remote())
+    self.assertEqual(first_count, second_count)
+
+    ray.worker.cleanup()
+
+  def testReferenceCountNone(self):
+    ray.init(start_ray_local=True, num_workers=1)
+
+    # Make sure that we aren't accidentally messing up Python's reference counts.
+    @ray.remote([], [int])
+    def f():
+      return sys.getrefcount(False)
+    first_count = ray.get(f.remote())
+    second_count = ray.get(f.remote())
+    self.assertEqual(first_count, second_count)
 
     ray.worker.cleanup()
 
@@ -675,6 +713,7 @@ class ClusterAttachingTest(unittest.TestCase):
     scheduler_port = np.random.randint(40000, 50000)
     scheduler_address = "{}:{}".format(node_ip_address, scheduler_port)
     ray.services.start_scheduler(scheduler_address, cleanup=True)
+    time.sleep(0.1)
     ray.services.start_node(scheduler_address, node_ip_address, num_workers=1, cleanup=True)
 
     ray.init(node_ip_address=node_ip_address, scheduler_address=scheduler_address)
@@ -691,6 +730,7 @@ class ClusterAttachingTest(unittest.TestCase):
     scheduler_port = np.random.randint(40000, 50000)
     scheduler_address = "{}:{}".format(node_ip_address, scheduler_port)
     ray.services.start_scheduler(scheduler_address, cleanup=True)
+    time.sleep(0.1)
     ray.services.start_node(scheduler_address, node_ip_address, num_workers=5, cleanup=True)
     ray.services.start_node(scheduler_address, node_ip_address, num_workers=5, cleanup=True)
     ray.services.start_node(scheduler_address, node_ip_address, num_workers=5, cleanup=True)
@@ -705,4 +745,4 @@ class ClusterAttachingTest(unittest.TestCase):
     ray.worker.cleanup()
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=2)

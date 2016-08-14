@@ -328,7 +328,7 @@ Status SchedulerService::NotifyFailure(ServerContext* context, const NotifyFailu
         PrintErrorMessageRequest print_request;
         print_request.mutable_failure()->CopyFrom(request->failure());
         AckReply print_reply;
-        RAY_CHECK_GRPC(worker->worker_stub->PrintErrorMessage(&client_context, print_request, &print_reply));
+        // RAY_CHECK_GRPC(worker->worker_stub->PrintErrorMessage(&client_context, print_request, &print_reply));
       }
     }
   }
@@ -1070,7 +1070,7 @@ void start_scheduler_service(const char* service_addr, SchedulingAlgorithmType s
   builder.RegisterService(&service);
   std::unique_ptr<Server> server(builder.BuildAndStart());
   if (server == nullptr) {
-    RAY_CHECK(false, "Failed to create the scheduler server.")
+    RAY_CHECK(false, "Failed to create the scheduler service.");
   }
   server->Wait();
 }
