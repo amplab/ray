@@ -49,10 +49,6 @@ extern "C" __declspec(dllimport) int __stdcall IsDebuggerPresent();
   if (!(condition)) {\
      RAY_LOG(RAY_FATAL, "Check failed at line " << __LINE__ << " in " << __FILE__ << ": " << #condition << " with message " << message) \
   }
-#define RAY_WARN(condition, message) \
-  if (!(condition)) {\
-     RAY_LOG(RAY_INFO, "Check failed at line " << __LINE__ << " in " << __FILE__ << ": " << #condition << " with message " << message) \
-  }
 
 #define RAY_CHECK_EQ(var1, var2, message) RAY_CHECK((var1) == (var2), message)
 #define RAY_CHECK_NEQ(var1, var2, message) RAY_CHECK((var1) != (var2), message)
@@ -64,5 +60,5 @@ extern "C" __declspec(dllimport) int __stdcall IsDebuggerPresent();
 #define RAY_CHECK_GRPC(expr) \
   do { \
     grpc::Status _s = (expr); \
-    RAY_WARN(_s.ok(), "grpc call failed with message " << _s.error_message()); \
+    RAY_CHECK(_s.ok(), "grpc call failed with message " << _s.error_message()); \
   } while (0);
