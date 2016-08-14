@@ -446,13 +446,13 @@ void Worker::export_reusable_variable(const std::string& name, const std::string
 // run in a separate thread and potentially utilize multiple threads.
 void Worker::start_worker_service(Mode mode) {
   RAY_LOG(RAY_DEBUG, "Worker is starting the worker service.");
-  // Signal when the worker service has started.
-  std::condition_variable worker_service_started;
-  // Lock for the above condition.
-  std::mutex worker_service_started_mutex;
+  // Create a mutex that the worker service thread will unlock once the worker
+  // service has been started.
+  std::mutex worker_service_started_lock;
+  worker_service_started_lock.lock();
   // Launch a new thread for running the worker service. We store this as a
   // field so that we can clean it up when we disconnect the worker.
-  worker_server_thread_ = std::thread([this, mode, &worker_service_started]() {
+  worker_server_thread_ = std::thread([this, mode, &worker_service_started_lock]() {
     ServerBuilder builder;
     // Get GRPC to assign an unused port number.
     builder.AddListeningPort(std::string("0.0.0.0:0"), grpc::InsecureServerCredentials(), &worker_port_);
@@ -469,22 +469,22 @@ void Worker::start_worker_service(Mode mode) {
     service.set_worker_address(worker_address_);
     // Connect the worker service by a queue to the worker object.
     service.connect_to_queue();
-    // Use the condition variable to notify the outside thread that the worker
-    // service has been started.
+    // Notify the outside thread that the worker service has been started.
     // TODO(rkn): Once this has been called, the outside thread will notify the
     // scheduler that the worker is ready to receive tasks. This can happen
     // before server->Wait() is called below. What happens to messages sent from
     // the scheduler before the call to server->Wait()?
-    worker_service_started.notify_all();
+    worker_service_started_lock.unlock();
     // Wait for work and process work. This method does not return until
     // Shutdown is called from a different thread.
     server->Wait();
     RAY_LOG(RAY_INFO, "Worker service thread returning.")
   });
-  {
-    // Wait until we know the worker service has been started.
-    std::unique_lock<std::mutex> lock(worker_service_started_mutex);
-    worker_service_started.wait(lock);
+  // Wait until we know the worker service has been started. This essentially
+  // implements a condition variable, but when we used a condition variable, we
+  // saw errors on Mac OS X on Travis.
+  while (!worker_service_started_lock.try_lock()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   // Connect to the queue for receiving messages from the worker service.
   std::string receive_queue_name = worker_address_;
