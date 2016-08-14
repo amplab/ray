@@ -100,7 +100,9 @@ Worker::Worker(const std::string& node_ip_address, const std::string& scheduler_
   // Start the worker service. This will find an unused port which is stored in
   // worker_port_. This also sets up a message queue between the worker and the
   // worker service.
-  start_worker_service(mode_);
+  if (mode_ == Mode::WORKER_MODE) {
+    start_worker_service(mode_);
+  }
 }
 
 
@@ -402,9 +404,9 @@ void Worker::disconnect() {
   connected_ = false;
   // Shut down the worker service. This will cause the call to server->Wait() to
   // return.
-  server_ptr_->Shutdown();
+  // server_ptr_->Shutdown();
   // Wait for the thread that launched the worker service to return.
-  worker_server_thread_.join();
+  // worker_server_thread_.join();
 }
 
 // TODO(rkn): Should we be using pointers or references? And should they be const?
