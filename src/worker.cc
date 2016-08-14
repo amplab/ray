@@ -1,5 +1,6 @@
 #include "worker.h"
 
+#include <atomic>
 #include <random>
 #include <chrono>
 #include <thread>
@@ -131,6 +132,7 @@ bool Worker::kill_workers(ClientContext &context) {
 void Worker::register_worker(const std::string& node_ip_address, const std::string& objstore_address, bool is_driver) {
   if (mode_ == Mode::WORKER_MODE) {
     start_worker_service(mode_);
+    RAY_CHECK(!worker_address_.empty(), "The worker address is empty. This should be initialized by start_worker_service, so it is possible that the thread synchronization failed.")
   }
   unsigned int retry_wait_milliseconds = 20;
   RegisterWorkerRequest request;
@@ -449,12 +451,13 @@ void Worker::export_reusable_variable(const std::string& name, const std::string
 // (in our case running in the main thread), whereas the WorkerService will
 // run in a separate thread and potentially utilize multiple threads.
 void Worker::start_worker_service(Mode mode) {
-  std::mutex mutex;
-  mutex.lock();
-  const char* service_addr = worker_address_.c_str();
+  // Use atomics so the worker service thread can signal the outside thread that
+  // the worker service has been started.
+  std::atomic_bool worker_service_started;
+  worker_service_started.store(false);
   // Launch a new thread for running the worker service. We store this as a
   // field so that we can clean it up when we disconnect the worker.
-  worker_server_thread_ = std::thread([this, service_addr, mode, &mutex]() {
+  worker_server_thread_ = std::thread([this, mode, &worker_service_started]() {
     // Create the worker service.
     WorkerServiceImpl service(receive_queue_name_, mode);
     ServerBuilder builder;
@@ -469,17 +472,16 @@ void Worker::start_worker_service(Mode mode) {
     worker_address_ = node_ip_address_ + ":" + std::to_string(port);
     server_ptr_ = server.get();
     RAY_LOG(RAY_INFO, "worker server listening at " << worker_address_);
-    mutex.unlock();
+    worker_service_started.store(true);
     // Wait for work and process work. This method does not return until
     // Shutdown is called from a different thread.
     server->Wait();
     RAY_LOG(RAY_INFO, "Worker service thread returning.")
   });
-  // Wait until the mutex has been unlocked by the thread that is launching the
-  // worker service, so we know that the service has been started. This
-  // essentially implements a condition variable, but that failed on Mac OS X on
-  // Travis.
-  while (!mutex.try_lock()) {
+  // Wait for the worker service to start. This essentially implements a
+  // condition variable using atomics, but that failed on Mac OS X on Travis.
+  while (!worker_service_started.load()) {
+    RAY_LOG(RAY_DEBUG, "Looping while waiting for the worker service to start.");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 }
