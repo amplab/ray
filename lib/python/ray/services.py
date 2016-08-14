@@ -61,7 +61,8 @@ def start_scheduler(scheduler_address, cleanup):
       this process will be killed by serices.cleanup() when the Python process
       that imported services exits.
   """
-  p = subprocess.Popen(["scheduler", scheduler_address, "--log-file-name", config.get_log_file_path("scheduler.log")], env=_services_env)
+  scheduler_port = scheduler_address.split(":")[1]
+  p = subprocess.Popen(["scheduler", scheduler_address, "--log-file-name", config.get_log_file_path("scheduler-" + scheduler_port + ".log")], env=_services_env)
   if cleanup:
     all_processes.append(p)
 

@@ -670,7 +670,7 @@ static PyObject* create_worker(PyObject* self, PyObject* args) {
     return NULL;
   }
   bool is_driver = (mode != Mode::WORKER_MODE);
-  Worker* worker = new Worker(std::string(scheduler_address), std::string(node_ip_address), static_cast<Mode>(mode));
+  Worker* worker = new Worker(std::string(node_ip_address), std::string(scheduler_address), static_cast<Mode>(mode));
   worker->register_worker(std::string(node_ip_address), std::string(objstore_address), is_driver);
 
   PyObject* t = PyTuple_New(2);

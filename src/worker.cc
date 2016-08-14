@@ -88,7 +88,7 @@ Status WorkerServiceImpl::PrintErrorMessage(ServerContext* context, const PrintE
   return Status::OK;
 }
 
-Worker::Worker(const std::string& scheduler_address, const std::string& node_ip_address, Mode mode)
+Worker::Worker(const std::string& node_ip_address, const std::string& scheduler_address, Mode mode)
     : scheduler_address_(scheduler_address),
       node_ip_address_(node_ip_address),
       mode_(mode) {
@@ -158,9 +158,14 @@ void Worker::register_worker(const std::string& node_ip_address, const std::stri
   objstoreid_ = reply.objstoreid();
   objstore_address_ = reply.objstore_address();
   segmentpool_ = std::make_shared<MemorySegmentPool>(objstoreid_, objstore_address_, false);
-
-  RAY_CHECK(request_obj_queue_.connect(std::string("queue:") + objstore_address_ + std::string(":obj"), false), "error connecting request_obj_queue_");
-  RAY_CHECK(receive_obj_queue_.connect(std::string("queue:") + objstore_address_ + std::string(":worker:") + std::to_string(workerid_) + std::string(":obj"), true), "error connecting receive_obj_queue_");
+  // Connect to the queue for sending requests to the object store.
+  std::string request_obj_queue_name = std::string("queue:") + objstore_address_ + std::string(":obj");
+  RAY_LOG(RAY_DEBUG, "Worker connecting to queue with name " << request_obj_queue_name << " to send requests to the object store.");
+  RAY_CHECK(request_obj_queue_.connect(request_obj_queue_name, false), "error connecting request_obj_queue_");
+  // Create a queue for receiving messages from the object store.
+  std::string receive_obj_queue_name = std::string("queue:") + objstore_address_ + std::string(":worker:") + std::to_string(workerid_) + std::string(":obj");
+  RAY_LOG(RAY_DEBUG, "Worker creating queue with name " << receive_obj_queue_name << " to receive messages from the object store.");
+  RAY_CHECK(receive_obj_queue_.connect(receive_obj_queue_name, true), "error connecting receive_obj_queue_");
   connected_ = true;
   return;
 }
@@ -403,7 +408,7 @@ void Worker::disconnect() {
   // return.
   // server_ptr_->Shutdown();
   // Wait for the thread that launched the worker service to return.
-  // worker_server_thread_->join();
+  // worker_server_thread_.join();
 }
 
 // TODO(rkn): Should we be using pointers or references? And should they be const?

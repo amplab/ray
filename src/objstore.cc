@@ -1,6 +1,5 @@
 #include "objstore.h"
 
-#include <random>
 #include <chrono>
 #include "utils.h"
 
@@ -334,6 +333,7 @@ void start_objstore(const char* scheduler_addr, const char* node_ip_address) {
   RAY_LOG(RAY_INFO, "Object store connected to scheduler " << scheduler_addr);
   ObjStoreService service(scheduler_channel);
   ServerBuilder builder;
+  // Get GRPC to assign an unused port.
   int port;
   builder.AddListeningPort(std::string("0.0.0.0:0"), grpc::InsecureServerCredentials(), &port);
   builder.RegisterService(&service);
@@ -346,6 +346,8 @@ void start_objstore(const char* scheduler_addr, const char* node_ip_address) {
   std::string recv_queue_name = std::string("queue:") + objstore_address + std::string(":obj");
   service.register_objstore(objstore_address, recv_queue_name);
   service.start_objstore_service();
+  // Process incoming GRPC calls. These may come from the scheduler or from
+  // other object stores. This method does not return.
   server->Wait();
 }
 

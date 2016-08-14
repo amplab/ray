@@ -69,8 +69,6 @@ private:
   std::unique_ptr<Scheduler::Stub> scheduler_stub_;
   std::vector<std::pair<WorkerId, ObjectID> > get_queue_;
   std::mutex get_queue_lock_;
-  // The name of the recv_queue_.
-  std::string recv_queue_name_;
   MessageQueue<ObjRequest> recv_queue_; // This queue is used by workers to send tasks to the object store.
   std::vector<MessageQueue<ObjHandle> > send_queues_; // This maps workerid -> queue. The object store uses these queues to send replies to the relevant workers.
   std::thread communicator_thread_;

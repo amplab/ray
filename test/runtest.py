@@ -396,7 +396,6 @@ class TaskStatusTest(unittest.TestCase):
 
     ray.worker.cleanup()
 
-  # @unittest.skip("This test is currently disabled because it fails on Travis.")
   def testFailImportingRemoteFunction(self):
     ray.init(start_ray_local=True, num_workers=2, driver_mode=ray.SILENT_MODE)
 
@@ -745,4 +744,4 @@ class ClusterAttachingTest(unittest.TestCase):
     ray.worker.cleanup()
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+  unittest.main(verbosity=2)

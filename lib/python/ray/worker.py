@@ -687,7 +687,6 @@ def connect(node_ip_address, scheduler_address, objstore_address=None, worker=gl
     objstore_address (Optional[str]): The ip address and port of the local
       object store. Normally, this argument should be omitted and the scheduler
       will tell the worker what object store to connect to.
-    is_driver (bool): True if this worker is a driver and false otherwise.
     mode: The mode of the worker. One of SCRIPT_MODE, WORKER_MODE, PYTHON_MODE,
       and SILENT_MODE.
   """
@@ -699,6 +698,9 @@ def connect(node_ip_address, scheduler_address, objstore_address=None, worker=gl
     return
 
   worker.scheduler_address = scheduler_address
+  # Create a worker object. This also creates the worker service, which can
+  # receive commands from the scheduler. This call also sets up a queue between
+  # the worker and the worker service.
   worker.handle, worker.worker_address = raylib.create_worker(node_ip_address, scheduler_address, objstore_address if objstore_address is not None else "", mode)
   worker.set_mode(mode)
   FORMAT = "%(asctime)-15s %(message)s"

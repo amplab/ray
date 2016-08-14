@@ -47,7 +47,7 @@ private:
 
 class Worker {
  public:
-  Worker(const std::string& scheduler_address, const std::string& node_ip_address, Mode mode);
+  Worker(const std::string& node_ip_address, const std::string& scheduler_address, Mode mode);
 
   // Submit a remote task to the scheduler. If the function in the task is not
   // registered with the scheduler, we will sleep for retry_wait_milliseconds
@@ -114,15 +114,15 @@ class Worker {
   bool connected_;
   const size_t CHUNK_SIZE = 8 * 1024;
   std::unique_ptr<Scheduler::Stub> scheduler_stub_;
-  std::thread worker_server_thread_;
   Server* server_ptr_;
+  std::thread worker_server_thread_;
   bip::managed_shared_memory segment_;
   WorkerId workerid_;
   ObjStoreId objstoreid_;
-  std::string node_ip_address_;
   std::string scheduler_address_;
   std::string objstore_address_;
   std::string worker_address_;
+  std::string node_ip_address_;
   // The queue used to send commands from the worker service to the worker.
   // This queue is created by the worker. This corresponds to the send_queue_ in
   // the worker service.
