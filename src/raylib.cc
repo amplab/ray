@@ -785,6 +785,7 @@ static PyObject* submit_task(PyObject* self, PyObject* args) {
   request.set_allocated_task(task);
   SubmitTaskReply reply = worker->submit_task(&request);
   if (!reply.function_registered()) {
+    request.release_task();
     PyErr_SetString(RayError, "task: function not registered");
     return NULL;
   }
