@@ -39,7 +39,8 @@ def _fill_function(func, globals, defaults, closure, dict):
   return result
 
 def _create_type(type_repr):
-  return eval(type_repr.replace("~", ""), None, (lambda d: d.setdefault("typing", typing) and None or d)(dict(typing.__dict__)))
+  # HACK: Just do string substitution
+  return eval(type_repr.replace("<", "[").replace(">", "]").replace("~", ""), None, (lambda d: d.setdefault("typing", typing) and None or d)(dict(typing.__dict__)))
 
 class BetterPickler(CloudPickler):
   def save_function_tuple(self, func):
@@ -69,4 +70,4 @@ class BetterPickler(CloudPickler):
     self.write(pickle.REDUCE)
   dispatch = CloudPickler.dispatch.copy()
   dispatch[(lambda _: lambda: _)(0).__closure__[0].__class__] = save_cell
-  # dispatch[typing.GenericMeta] = save_type
+  dispatch[typing.GenericMeta] = save_type
