@@ -779,9 +779,13 @@ def connect(node_ip_address, scheduler_address, objstore_address=None, worker=gl
   _logger().propagate = False
   if mode in [raylib.SCRIPT_MODE, raylib.SILENT_MODE]:
     # Add the directory containing the script that is running to the Python
-    # paths of the workers.
+    # paths of the workers. Also add the current directory. Note that this
+    # assumes that the directory structures on the machines in the clusters are
+    # the same.
     script_directory = os.path.abspath(os.path.dirname(sys.argv[0]))
+    current_directory = os.path.abspath(os.path.curdir)
     worker.run_function_on_all_workers(lambda : sys.path.insert(1, script_directory))
+    worker.run_function_on_all_workers(lambda : sys.path.insert(1, current_directory))
     # Export cached remote functions to the workers.
     for function_name, function_to_export in worker.cached_remote_functions:
       raylib.export_remote_function(worker.handle, function_name, function_to_export)
