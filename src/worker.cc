@@ -26,6 +26,7 @@ Status WorkerServiceImpl::ExecuteTask(ServerContext* context, const ExecuteTaskR
     WorkerMessage* message_ptr = message.get();
     RAY_CHECK(send_queue_.send(&message_ptr), "Failed to send message from the worker service to the worker because the message queue was full.");
   }
+  // The message will get deleted in receive_next_message().
   message.release();
   return Status::OK;
 }
@@ -39,6 +40,7 @@ Status WorkerServiceImpl::RunFunctionOnWorker(ServerContext* context, const RunF
     WorkerMessage* message_ptr = message.get();
     RAY_CHECK(send_queue_.send(&message_ptr), "Failed to send message from the worker service to the worker because the message queue was full.");
   }
+  // The message will get deleted in receive_next_message().
   message.release();
   return Status::OK;
 }
@@ -52,6 +54,7 @@ Status WorkerServiceImpl::ImportRemoteFunction(ServerContext* context, const Imp
     WorkerMessage* message_ptr = message.get();
     RAY_CHECK(send_queue_.send(&message_ptr), "Failed to send message from the worker service to the worker because the message queue was full.");
   }
+  // The message will get deleted in receive_next_message().
   message.release();
   return Status::OK;
 }
@@ -65,6 +68,7 @@ Status WorkerServiceImpl::ImportReusableVariable(ServerContext* context, const I
     WorkerMessage* message_ptr = message.get();
     RAY_CHECK(send_queue_.send(&message_ptr), "Failed to send message from the worker service to the worker because the message queue was full.");
   }
+  // The message will get deleted in receive_next_message().
   message.release();
   return Status::OK;
 }
