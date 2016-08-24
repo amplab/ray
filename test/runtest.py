@@ -2,78 +2,183 @@ import unittest
 import ray
 import numpy as np
 import time
-import subprocess32 as subprocess
-import os
 import sys
-from numpy.testing import assert_equal
+import string
 
 import test_functions
 import ray.array.remote as ra
 import ray.array.distributed as da
 
-RAY_TEST_OBJECTS = [[1, "hello", 3.0], 42, 43L, "hello world", 42.0, 1L << 62,
-                    (1.0, "hi"), None, (None, None), ("hello", None),
-                    True, False, (True, False), u"\u262F",
-                    {True: "hello", False: "world"},
-                    {"hello" : "world", 1: 42, 1.0: 45}, {},
-                    np.int8(3), np.int32(4), np.int64(5),
-                    np.uint8(3), np.uint32(4), np.uint64(5),
-                    np.float32(1.0), np.float64(1.0)]
+def assert_equal(obj1, obj2):
+  type_whitelist = [set([ray.serialization.Int, int]),
+                    set([ray.serialization.Long, long]),
+                    set([ray.serialization.Float, float]),
+                    set([ray.serialization.List, list]),
+                    set([ray.serialization.Dict, dict]),
+                    set([ray.serialization.Tuple, tuple]),
+                    set([ray.serialization.Str, str]),
+                    set([ray.serialization.Unicode, unicode]),
+                    set([ray.serialization.NDArray, np.ndarray]),
+                    set([int, np.int8]),
+                    set([int, np.int32]),
+                    set([int, np.int64]),
+                    set([int, np.uint8]),
+                    set([int, np.uint32]),
+                    set([int, np.uint64]),
+                    set([float, np.float32]),
+                    set([float, np.float64]),
+                    # These are here because we do not properly handle longs.
+                    set([int, long]),
+                    set([ray.serialization.Int, long]),
+                    # These are here because we do not properly handle bools.
+                    set([ray.serialization.Int, bool]),
+                    # Here are some more things we do nt handle properly.
+                    set([ray.serialization.Int, np.int8]),
+                    set([ray.serialization.Int, np.int32]),
+                    set([ray.serialization.Int, np.int64]),
+                    set([ray.serialization.Int, np.uint8]),
+                    set([ray.serialization.Int, np.uint32]),
+                    set([ray.serialization.Int, np.uint64]),
+                    set([ray.serialization.Float, np.float32]),
+                    set([ray.serialization.Float, np.float64])]
+  assert type(obj1) is type(obj2) or set([type(obj1), type(obj2)]) in type_whitelist, "Objects {} and {} have different types, {} does not equal {}.".format(obj1, obj2, type(obj1), type(obj2))
+  if type(obj1).__module__ == np.__name__ or type(obj2).__module__ == np.__name__:
+    if (hasattr(obj1, "shape") and obj1.shape == ()) or (hasattr(obj2, "shape") and obj2.shape == ()):
+      # This is a special case because currently np.testing.assert_equal fails
+      # because we do not properly handle different numerical types.
+      assert obj1 == obj2, "Objects {} and {} are different.".format(obj1, obj2)
+    else:
+      np.testing.assert_equal(obj1, obj2)
+  elif hasattr(obj1, "__dict__") and hasattr(obj2, "__dict__"):
+    assert obj1.__dict__.keys() == obj2.__dict__.keys(), "Objects {} and {} are different.".format(obj1, obj2)
+    for key in obj1.__dict__.keys():
+      assert_equal(obj1.__dict__[key], obj2.__dict__[key])
+  elif type(obj1) is dict or type(obj2) is dict:
+    assert_equal(obj1.keys(), obj2.keys())
+    for key in obj1.keys():
+      assert_equal(obj1[key], obj2[key])
+  elif type(obj1) is list or type(obj2) is list:
+    assert len(obj1) == len(obj2), "Objects {} and {} are lists with different lengths.".format(obj1, obj2)
+    for i in range(len(obj1)):
+      assert_equal(obj1[i], obj2[i])
+  elif type(obj1) is tuple or type(obj2) is tuple:
+    assert len(obj1) == len(obj2), "Objects {} and {} are tuples with different lengths.".format(obj1, obj2)
+    for i in range(len(obj1)):
+      assert_equal(obj1[i], obj2[i])
+  else:
+    assert obj1 == obj2, "Objects {} and {} are different.".format(obj1, obj2)
 
-class UserDefinedType(object):
+PRIMITIVE_OBJECTS = [0, 0.0, 0L, 1L << 62, "a", string.printable, "\u262F",
+                     u"hello world", u"\xff\xfe\x9c\x001\x000\x00", None, True,
+                     False, [], (), {}, np.int8(3), np.int32(4), np.int64(5),
+                     np.uint8(3), np.uint32(4), np.uint64(5), np.float32(1.0),
+                     np.float64(1.0), np.zeros([100, 100]),
+                     np.random.normal(size=[100, 100])]
+
+COMPLEX_OBJECTS = [[[[[[[[[[[[[]]]]]]]]]]]], {"obj{}".format(i):
+                   np.random.normal(size=[100, 100, 100]) for i in range(10)},
+                   #{(): {(): {(): {(): {(): {(): {(): {(): {(): {(): {(): {(): {}}}}}}}}}}}}},
+                   #((((((((((),),),),),),),),),),
+                   # include a TensorFlow graph?
+                   {"a": {"b": {"c": {"d": {}}}}}]
+
+class Foo(object):
   def __init__(self):
     pass
 
-  @staticmethod
-  def deserialize(primitives):
-    return "user defined type"
+class Bar(object):
+  def __init__(self):
+    for i, val in enumerate(PRIMITIVE_OBJECTS + COMPLEX_OBJECTS):
+      setattr(self, "field{}".format(i), val)
 
-  def serialize(self):
-    return "user defined type"
+class Baz(object):
+  def __init__(self):
+    self.foo = Foo()
+    self.bar = Bar()
+  def method(self, arg):
+    pass
+
+class Qux(object):
+  def __init__(self):
+    self.objs = [Foo(), Bar(), Baz()]
+
+class SubQux(Qux):
+  def __init__(self):
+    Qux.__init__(self)
+
+class CustomError(Exception):
+  pass
+
+CUSTOM_OBJECTS = [Foo(), Bar(), Baz(), Qux(), SubQux(), Exception("Test object."), CustomError()]
+CUSTOM_OBJECTS = []
+
+BASE_OBJECTS = PRIMITIVE_OBJECTS + COMPLEX_OBJECTS + CUSTOM_OBJECTS
+
+LIST_OBJECTS = [[obj] for obj in BASE_OBJECTS]
+TUPLE_OBJECTS = [(obj,) for obj in BASE_OBJECTS]
+DICT_OBJECTS = ([{obj: obj} for obj in BASE_OBJECTS if obj.__hash__ is not None] +
+                [{0: obj} for obj in BASE_OBJECTS])
+
+RAY_TEST_OBJECTS = BASE_OBJECTS + LIST_OBJECTS + TUPLE_OBJECTS + DICT_OBJECTS
+RAY_TEST_OBJECTS.pop(96) # Remove {(): ()}
 
 class SerializationTest(unittest.TestCase):
-
-  def roundTripTest(self, data):
-    serialized, _ = ray.serialization.serialize(ray.worker.global_worker.handle, data)
-    result = ray.serialization.deserialize(ray.worker.global_worker.handle, serialized)
-    assert_equal(data, result)
-
-  def numpyTypeTest(self, typ):
-    self.roundTripTest(np.random.randint(0, 10, size=(100, 100)).astype(typ))
-    self.roundTripTest(np.array(0).astype(typ))
-    self.roundTripTest(np.empty((0,)).astype(typ))
 
   def testSerialize(self):
     ray.init(start_ray_local=True, num_workers=0)
 
-    for val in RAY_TEST_OBJECTS:
-      self.roundTripTest(val)
+    # Test that serializing and deserializing objects doesn't change them.
+    for obj in RAY_TEST_OBJECTS:
+      serialized, _ = ray.serialization.serialize(ray.worker.global_worker.handle, obj)
+      result = ray.serialization.deserialize(ray.worker.global_worker.handle, serialized)
+      assert_equal(obj, result)
 
-    self.roundTripTest(np.zeros((100, 100)))
+    # Test that numpy types are preserved.
+    for numpy_type in ["int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "float64"]:
+      obj = np.array(1).astype(numpy_type)
+      serialized, _ = ray.serialization.serialize(ray.worker.global_worker.handle, obj)
+      result = ray.serialization.deserialize(ray.worker.global_worker.handle, serialized)
+      assert_equal(obj.dtype, result.dtype)
 
-    self.numpyTypeTest("int8")
-    self.numpyTypeTest("uint8")
-    self.numpyTypeTest("int16")
-    self.numpyTypeTest("uint16")
-    self.numpyTypeTest("int32")
-    self.numpyTypeTest("uint32")
-    self.numpyTypeTest("float32")
-    self.numpyTypeTest("float64")
+    # Test that we can serialize and deserialize objects containing ObjectIDs.
+    id0 = ray.put(0)
+    id1 = ray.put(1)
+    id2 = ray.put(2)
+    id3 = ray.put(3)
+    ID_OBJECTS = [id0, (id0, 1), [id0, id1, id2, id3],
+                  {"0": id0, "1": id1, "2": id2, "3": id3},
+                  np.array([[id0, id1], [id2, id3]])]
+    for obj in ID_OBJECTS:
+      serialized, _ = ray.serialization.serialize(ray.worker.global_worker.handle, obj)
+      result = ray.serialization.deserialize(ray.worker.global_worker.handle, serialized)
+      assert_equal(obj, result)
 
-    ref0 = ray.put(0)
-    ref1 = ray.put(0)
-    ref2 = ray.put(0)
-    ref3 = ray.put(0)
-
-    a = np.array([[ref0, ref1], [ref2, ref3]])
-    capsule, _ = ray.serialization.serialize(ray.worker.global_worker.handle, a)
-    result = ray.serialization.deserialize(ray.worker.global_worker.handle, capsule)
-    self.assertTrue((a == result).all())
-
-    self.roundTripTest(ref0)
-    self.roundTripTest([ref0, ref1, ref2, ref3])
-    self.roundTripTest({"0": ref0, "1": ref1, "2": ref2, "3": ref3})
-    self.roundTripTest((ref0, 1))
+    # Check that assert_equal raises an exception when the args are different.
+    self.assertRaises(Exception, lambda : assert_equal(1, 1.0))
+    # self.assertRaises(Exception, lambda : assert_equal(1, 1L))  # This is commented out because it currently fails.
+    self.assertRaises(Exception, lambda : assert_equal([1], (1)))
+    self.assertRaises(Exception, lambda : assert_equal([[[]]], [[[1]]]))
+    self.assertRaises(Exception, lambda : assert_equal({(): {}}, {(): {1}}))
+    f1 = Foo()
+    f2 = Foo()
+    f2.__setattr__("test", 0)
+    self.assertRaises(Exception, lambda : assert_equal(f1, f2))
+    b1 = Bar()
+    b2 = Bar()
+    b1.__setattr__("test", f1)
+    b2.__setattr__("test", f2)
+    self.assertRaises(Exception, lambda : assert_equal(b1, b2))
+    self.assertRaises(Exception, lambda : assert_equal(True, False))
+    x1 = np.zeros([10, 10])
+    x2 = np.zeros([10, 10])
+    x2[0, 0] = 1
+    self.assertRaises(Exception, lambda : assert_equal(x1, x2))
+    f1 = Foo()
+    f2 = Foo()
+    f1.__setattr__("test", x1)
+    f2.__setattr__("test", x2)
+    self.assertRaises(Exception, lambda : assert_equal(f1, f2))
+    self.assertRaises(Exception, lambda : assert_equal([f1], [f2]))
 
     ray.worker.cleanup()
 
@@ -96,32 +201,16 @@ class ObjStoreTest(unittest.TestCase):
     for data in RAY_TEST_OBJECTS:
       objectid = ray.put(data, w1)
       result = ray.get(objectid, w1)
-      self.assertEqual(result, data)
+      assert_equal(result, data)
 
     # putting an object, shipping it to another worker, and getting it shouldn't change it
     for data in RAY_TEST_OBJECTS:
-      objectid = ray.put(data, w1)
-      result = ray.get(objectid, w2)
-      self.assertEqual(result, data)
-
-    # putting an object, shipping it to another worker, and getting it shouldn't change it
-    for data in RAY_TEST_OBJECTS:
-      objectid = ray.put(data, w2)
-      result = ray.get(objectid, w1)
-      self.assertEqual(result, data)
-
-    ARRAY_TEST_OBJECTS = [np.zeros([10, 20]), np.random.normal(size=[45, 25]),
-                          ("a", np.random.normal(size=[10, 10])),
-                          ["a", np.random.normal(size=[10, 10])]]
-
-    # putting an array, shipping it to another worker, and getting it shouldn't change it
-    for data in ARRAY_TEST_OBJECTS:
       objectid = ray.put(data, w1)
       result = ray.get(objectid, w2)
       assert_equal(result, data)
 
-    # putting an array, shipping it to another worker, and getting it shouldn't change it
-    for data in ARRAY_TEST_OBJECTS:
+    # putting an object, shipping it to another worker, and getting it shouldn't change it
+    for data in RAY_TEST_OBJECTS:
       objectid = ray.put(data, w2)
       result = ray.get(objectid, w1)
       assert_equal(result, data)
@@ -445,7 +534,7 @@ class ReferenceCountingTest(unittest.TestCase):
   def testGet(self):
     ray.init(start_ray_local=True, num_workers=3)
 
-    for val in RAY_TEST_OBJECTS + [np.zeros((2, 2)), UserDefinedType()]:
+    for val in RAY_TEST_OBJECTS:
       objectid_val = check_get_deallocated(val)
       self.assertEqual(ray.scheduler_info()["reference_counts"][objectid_val], -1)
 
