@@ -53,6 +53,7 @@ estimate of pi (waiting until the computation has finished if necessary).
 - [Tutorial](doc/tutorial.md)
 - [About the System](doc/about-the-system.md)
 - [Using Ray on a Cluster](doc/using-ray-on-a-cluster.md)
+- [Running Ray with Quilt](quilt)
 
 ## Example Applications
 
