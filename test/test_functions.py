@@ -116,3 +116,11 @@ def test_return1():
 @ray.remote([], [int, float])
 def test_return2():
   return 2.0, 3.0
+
+class Temp_class(object):
+  def __init__(self):
+    self.a = 5
+
+@ray.remote([], [Temp_class])
+def test_unknown_type():
+  return Temp_class()
