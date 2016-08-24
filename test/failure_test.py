@@ -32,7 +32,6 @@ class FailureTest(unittest.TestCase):
     self.assertEqual(len(task_info["failed_tasks"]), 2)
     self.assertEqual(len(task_info["running_tasks"]), 0)
 
-
     ray.worker.cleanup()
 
   def testUnknownSerialization(self):

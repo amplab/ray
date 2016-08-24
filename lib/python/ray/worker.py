@@ -1348,7 +1348,6 @@ def get_arguments_for_execution(function, args, worker=global_worker):
         # If the result is a RayTaskError, then the task that created this
         # object failed, and we should propagate the error message here.
         raise RayGetArgumentError(function.__name__, i, arg, argument)
-        raise RayGetArgumentError(function.__name__, i, arg, argument)
       _logger().info("Successfully retrieved argument {} for function {}.".format(i, function.__name__))
     else:
       # pass the argument by value
