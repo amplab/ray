@@ -117,10 +117,10 @@ def test_return1():
 def test_return2():
   return 2.0, 3.0
 
-class testClass(object):
+class TestClass(object):
   def __init__(self):
     self.a = 5
 
-@ray.remote([], [testClass])
+@ray.remote([], [TestClass])
 def test_unknown_type():
-  return testClass()
+  return TestClass()

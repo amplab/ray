@@ -37,6 +37,7 @@ class FailureTest(unittest.TestCase):
   def testUnknownSerialization(self):
     reload(test_functions)
     ray.init(start_ray_local=True, num_workers=1, driver_mode=ray.SILENT_MODE)
+
     test_functions.test_unknown_type.remote()
     time.sleep(0.2)
     task_info = ray.task_info()
