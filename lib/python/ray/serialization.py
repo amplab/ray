@@ -41,7 +41,7 @@ def to_primitive(value):
   result = {"py/module": type(value).__module__, "py/type": type(value).__name__}
   if hasattr(value, "__getnewargs__"):
     result.update({"py/newargs": value.__getnewargs__()})
-  # result.update(dict((k, to_primitive(v)) for (k, v) in value.__dict__.iteritems()))
+  result.update(dict((k, to_primitive(v)) for (k, v) in value.__dict__.iteritems() if k not in ["ray_deallocator", "ray_objectid"]))
   return result
 
 def from_primitive(dictionary):
@@ -51,6 +51,7 @@ def from_primitive(dictionary):
     newargs = dictionary["py/newargs"] if dictionary.has_key("py/newargs") else []
     cls = module.__dict__[type_name]
     obj = cls.__new__(cls, *map(from_primitive, newargs))
+    obj.__dict__.update(dict((k, from_primitive(v)) for (k, v) in dictionary.iteritems() if k not in ["py/type", "py/module", "py/newargs"]))
     return obj
   else:
     return dictionary
