@@ -417,7 +417,8 @@ class Worker(object):
     try:
       # We put the value into a list here because in arrow the concept of
       # "serializing a single object" does not exits.
-      schema, size, serialized = libnumbuf.serialize_list([value])
+      prim_value = serialization.to_primitive(value)
+      schema, size, serialized = libnumbuf.serialize_list([prim_value])
       # TODO(pcm): Right now, metadata is serialized twice, change that in the future
       # in the following line, the "8" is for storing the metadata size,
       # the len(schema) is for storing the metadata and the 4096 is for storing
@@ -458,7 +459,7 @@ class Worker(object):
       deserialized = libnumbuf.deserialize_list(serialized)
       # Unwrap the object from the list (it was wrapped put_object)
       assert len(deserialized) == 1
-      result = deserialized[0]
+      result = serialization.from_primitive(deserialized[0])
       ## this is the old codepath
       # result, segmentid = raylib.get_arrow(self.handle, objectid)
     else:

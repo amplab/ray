@@ -35,25 +35,25 @@ class Unicode(unicode):
 class NDArray(np.ndarray):
   pass
 
-def to_primitive(obj):
-  if hasattr(obj, "serialize"):
-    primitive_obj = ((type(obj).__module__, type(obj).__name__), obj.serialize())
-  else:
-    primitive_obj = ("primitive", obj)
-  return primitive_obj
+def to_primitive(value):
+  if not hasattr(value, "__dict__"):
+    return value
+  result = {"py/module": type(value).__module__, "py/type": type(value).__name__}
+  if hasattr(value, "__getnewargs__"):
+    result.update({"py/newargs": value.__getnewargs__()})
+  # result.update(dict((k, to_primitive(v)) for (k, v) in value.__dict__.iteritems()))
+  return result
 
-def from_primitive(primitive_obj):
-  if primitive_obj[0] == "primitive":
-    obj = primitive_obj[1]
+def from_primitive(dictionary):
+  if isinstance(dictionary, dict) and dictionary.has_key("py/module"):
+    module = importlib.import_module(dictionary["py/module"])
+    type_name = dictionary["py/type"]
+    newargs = dictionary["py/newargs"] if dictionary.has_key("py/newargs") else []
+    cls = module.__dict__[type_name]
+    obj = cls.__new__(cls, *map(from_primitive, newargs))
+    return obj
   else:
-    # This code assumes that the type module.__dict__[type_name] knows how to deserialize itself
-    type_module, type_name = primitive_obj[0]
-    module = importlib.import_module(type_module)
-    obj = module.__dict__[type_name].deserialize(primitive_obj[1])
-  return obj
-
-def is_arrow_serializable(value):
-  return isinstance(value, np.ndarray) and value.dtype.name in ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float32", "float64"]
+    return dictionary
 
 def serialize(worker_capsule, obj):
   primitive_obj = to_primitive(obj)
