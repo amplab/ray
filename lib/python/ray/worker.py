@@ -782,6 +782,9 @@ def get(objectid, worker=global_worker):
     A Python object
   """
   check_connected(worker)
+  if type(objectid) is list:
+    [raylib.request_object(worker.handle, x) for x in objectid]
+    return [worker.get_object(x) for x in objectid]
   if worker.mode == raylib.PYTHON_MODE:
     return objectid # In raylib.PYTHON_MODE, ray.get is the identity operation (the input will actually be a value not an objectid)
   raylib.request_object(worker.handle, objectid)

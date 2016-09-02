@@ -95,6 +95,10 @@ If the remote object corresponding to the object ID `x_id` has not been
 created yet, *the command `ray.get(x_id)` will wait until the remote object has
 been created.*
 
+A very common use case of `ray.get` is to get a list of object IDs. In this
+case, you can call `ray.get(object_ids)` where `object_ids` is a list of object
+IDs.
+
 ## Computation graphs in Ray
 
 Ray represents computation with a directed acyclic graph of tasks. Tasks are
@@ -202,7 +206,7 @@ for i in range(10):
   result_ids.append(sleep.remote(2))
 
 # Wait for the results. If we have at least ten workers, this takes 2 seconds.
-[ray.get(result_id) for result_id in result_ids]  # prints [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+ray.get(result_ids)  # prints [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ```
 
 The for loop simply adds ten tasks to the computation graph, with no
@@ -287,10 +291,10 @@ def run_experiment(i):
   for j in range(10):
     sub_results.append(sub_experiment.remote(i, j))
   # Return the sum of the results of the sub-experiments.
-  return sum([ray.get(sub_result) for sub_result in sub_results])
+  return sum(ray.get(sub_results))
 
 results = [run_experiment.remote(i) for i in range(5)]
-[ray.get(result) for result in results]  # prints [45, 55, 65, 75, 85]
+ray.get(results) # prints [45, 55, 65, 75, 85]
 ```
 
 When the remote function `run_experiment` is executed on a worker, it calls the
