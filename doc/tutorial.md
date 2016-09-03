@@ -99,6 +99,11 @@ A very common use case of `ray.get` is to get a list of object IDs. In this
 case, you can call `ray.get(object_ids)` where `object_ids` is a list of object
 IDs.
 
+```python
+result_ids = [ray.put(i) for i in range(10)]
+ray.get(result_ids)  # prints [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+```
+
 ## Computation graphs in Ray
 
 Ray represents computation with a directed acyclic graph of tasks. Tasks are
