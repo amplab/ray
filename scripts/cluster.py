@@ -134,7 +134,9 @@ class RayCluster(object):
       cd ray;
       ./install-dependencies.sh;
       ./setup.sh;
-      ./build.sh
+      ./build.sh;
+      cd lib/python;
+      python setup.py develop --user
     """.format(self.installation_directory, self.installation_directory)
     self.run_command_over_ssh_on_all_nodes_in_parallel(install_ray_command)
 
@@ -154,7 +156,6 @@ class RayCluster(object):
     # The triple backslashes are used for two rounds of escaping, something like \\\" -> \" -> "
     start_scheduler_command = """
       cd "{}";
-      source ../setup-env.sh;
       python -c "import ray; ray.services.start_scheduler(\\\"{}:10001\\\", cleanup=False)" > start_scheduler.out 2> start_scheduler.err < /dev/null &
     """.format(scripts_directory, self.node_private_ip_addresses[0])
     self._run_command_over_ssh(self.node_ip_addresses[0], start_scheduler_command)
@@ -165,27 +166,21 @@ class RayCluster(object):
     for i, node_ip_address in enumerate(self.node_ip_addresses):
       start_workers_command = """
         cd "{}";
-        source ../setup-env.sh;
         python -c "import ray; ray.services.start_node(\\\"{}:10001\\\", \\\"{}\\\", {})" > start_workers.out 2> start_workers.err < /dev/null &
       """.format(scripts_directory, self.node_private_ip_addresses[0], self.node_private_ip_addresses[i], num_workers_per_node)
       start_workers_commands.append(start_workers_command)
     self.run_command_over_ssh_on_all_nodes_in_parallel(start_workers_commands)
 
-    setup_env_path = os.path.join(self.installation_directory, "ray/setup-env.sh")
     print """
       The cluster has been started. You can attach to the cluster by sshing to the head node with the following command.
 
           ssh -i {} {}@{}
 
-      Then run the following commands.
-
-          source {}  # Add Ray to your Python path.
-
       Then within a Python interpreter or script, run the following commands.
 
           import ray
           ray.init(node_ip_address="{}", scheduler_address="{}:10001")
-    """.format(self.key_file, self.username, self.node_ip_addresses[0], setup_env_path, self.node_private_ip_addresses[0], self.node_private_ip_addresses[0])
+    """.format(self.key_file, self.username, self.node_ip_addresses[0], self.node_private_ip_addresses[0], self.node_private_ip_addresses[0])
 
   def stop_ray(self):
     """Kill all of the processes in the Ray cluster.

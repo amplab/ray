@@ -18,20 +18,11 @@ else
   exit 1
 fi
 
-echo "building arrow"
-cd $TP_DIR/arrow/cpp
-source setup_build_env.sh
-mkdir -p $TP_DIR/arrow/cpp/build
-cd $TP_DIR/arrow/cpp/build
-cmake -DLIBARROW_LINKAGE=STATIC -DCMAKE_BUILD_TYPE=Release ..
-make VERBOSE=1 -j$PARALLEL
-
 echo "building numbuf"
 cd $TP_DIR/numbuf
-mkdir -p build
-cd $TP_DIR/numbuf/build
-cmake ..
-make VERBOSE=1 -j$PARALLEL
+./setup.sh
+./build.sh
+python setup.py develop --user
 
 echo "building GRPC"
 cd $TP_DIR/grpc

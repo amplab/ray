@@ -17,3 +17,6 @@ USER ray-user
 WORKDIR /home/ray-user/ray
 RUN ./setup.sh
 RUN ./build.sh
+WORKDIR /home/ray-user/ray/lib/python
+RUN python setup.py develop --user
+WORKDIR /home/ray-user/ray

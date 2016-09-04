@@ -25,4 +25,6 @@ else
   ./install-dependencies.sh
   ./setup.sh
   ./build.sh
+  cd ./lib/python
+  python setup.py develop --user
 fi

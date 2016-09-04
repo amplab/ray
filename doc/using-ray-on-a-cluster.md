@@ -122,7 +122,6 @@ will be redirected to your terminal.
 the tests.
     ```
     cd $HOME/ray/
-    source setup-env.sh  # Add Ray to your Python path.
     python test/runtest.py  # This tests basic functionality.
     python test/array_test.py  # This tests some array libraries.
     ```
@@ -138,10 +137,6 @@ to the cluster's head node (as described by the output of the
     The cluster has been started. You can attach to the cluster by sshing to the head node with the following command.
 
         ssh -i awskey.pem ubuntu@12.34.56.789
-
-    Then run the following commands.
-
-        source $HOME/ray/setup-env.sh  # Add Ray to your Python path.
 
     Then within a Python interpreter, run the following commands.
 

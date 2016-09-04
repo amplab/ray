@@ -47,7 +47,6 @@ multiple machines, this must be done on all machines.
 From the directory `ray/examples/alexnet/` run the following
 
 ```
-source ../../setup-env.sh
 python driver.py --s3-bucket $S3_BUCKET
 ```
 

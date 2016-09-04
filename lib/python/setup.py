@@ -1,9 +1,8 @@
 import sys
 
-from setuptools import setup, Extension, find_packages
-import setuptools
+from setuptools import setup, find_packages
 
-# because of relative paths, this must be run from inside ray/lib/python/
+# Because of relative paths, this must be run from inside ray/lib/python/.
 
 setup(
   name = "ray",

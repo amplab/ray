@@ -15,7 +15,7 @@ First install the dependencies. We currently do not support Python 3.
 ```
 sudo apt-get update
 sudo apt-get install -y git cmake build-essential autoconf curl libtool python-dev python-numpy python-pip libboost-all-dev unzip graphviz
-sudo pip install ipython funcsigs subprocess32 protobuf colorama graphviz cloudpickle
+pip install ipython funcsigs subprocess32 protobuf colorama graphviz cloudpickle
 ```
 
 ## Build
@@ -26,12 +26,15 @@ Then run the setup scripts.
 cd ray
 ./setup.sh # Build all necessary third party libraries (e.g., gRPC and Apache Arrow). This may take about 10 minutes.
 ./build.sh # Build Ray.
-source setup-env.sh # Add Ray to your Python path.
 ```
 
-For convenience, you may also want to add the line `source
-"$RAY_ROOT/setup-env.sh"` to the bottom of your `~/.bashrc` file manually, where
-`$RAY_ROOT` is the Ray directory (e.g., `/home/ubuntu/ray`).
+Then to install the Python package, run the following.
+```
+cd lib/python
+python setup.py develop --user
+```
+This adds a reference to the current directory, so you need to leave all the
+files in place.
 
 ## Test if the installation succeeded
 

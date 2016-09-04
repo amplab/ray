@@ -18,8 +18,8 @@ install [Anaconda](https://www.continuum.io/downloads).
 brew update
 brew install git cmake automake autoconf libtool boost graphviz
 sudo easy_install pip
-sudo pip install ipython --user
-sudo pip install numpy funcsigs subprocess32 protobuf colorama graphviz cloudpickle --ignore-installed six
+pip install ipython --user
+pip install numpy funcsigs subprocess32 protobuf colorama graphviz cloudpickle --ignore-installed six
 ```
 
 ## Build
@@ -30,12 +30,15 @@ Then run the setup scripts.
 cd ray
 ./setup.sh # Build all necessary third party libraries (e.g., gRPC and Apache Arrow). This may take about 10 minutes.
 ./build.sh # Build Ray.
-source setup-env.sh # Add Ray to your Python path.
 ```
 
-For convenience, you may also want to add the line `source
-"$RAY_ROOT/setup-env.sh"` to the bottom of your `~/.bashrc` file manually, where
-`$RAY_ROOT` is the Ray directory (e.g., `/home/ubuntu/ray`).
+Then to install the Python package, run the following.
+```
+cd lib/python
+python setup.py develop --user
+```
+This adds a reference to the current directory, so you need to leave all the
+files in place.
 
 ## Test if the installation succeeded
 

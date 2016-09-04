@@ -16,5 +16,7 @@ RUN git clone https://github.com/amplab/ray
 WORKDIR /home/ray-user/ray
 RUN ./setup.sh
 RUN ./build.sh
-RUN echo '\n# Ray environment\nsource /home/ray-user/ray/setup-env.sh' >> /home/ray-user/.bashrc
+WORKDIR /home/ray-user/ray/lib/python
+RUN python setup.py develop --user
+WORKDIR /home/ray-user/ray
 ENTRYPOINT bash

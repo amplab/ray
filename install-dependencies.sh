@@ -35,7 +35,7 @@ if [[ $platform == "linux" ]]; then
 elif [[ $platform == "macosx" ]]; then
   # These commands must be kept in sync with the installation instructions.
   brew install git cmake automake autoconf libtool boost graphviz
-  sudo easy_install pip
-  sudo pip install ipython --user
-  sudo pip install numpy funcsigs subprocess32 protobuf colorama graphviz cloudpickle --ignore-installed six
+  easy_install pip
+  pip install ipython --user
+  pip install numpy funcsigs subprocess32 protobuf colorama graphviz cloudpickle --ignore-installed six --user
 fi
