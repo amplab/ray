@@ -280,18 +280,25 @@ class RayReusables(object):
     raise Exception("Attempted deletion of attribute {}. Attributes of a RayReusable object may not be deleted.".format(name))
 
 class ObjectFixture(object):
-  """The object referred to by objectid will get unmaped when the fixture
-     is deallocated. In addition, the refcount will be decremented because
-     self.objectid will be deallocated. ObjectFixture is used as the base object
-     for numpy arrays that are contained in the object referred to by objectid
-     and prevents memory that is used by them from getting unmapped."""
+  """This is used to handle unmapping objects backed by the object store.
+
+  The object referred to by objectid will get unmaped when the fixture is
+  deallocated. In addition, the ObjectFixture holds the objectid as a field,
+  which ensures that the corresponding object will not be deallocated from the
+  object store while the ObjectFixture is alive. ObjectFixture is used as the
+  base object for numpy arrays that are contained in the object referred to by
+  objectid and prevents memory that is used by them from getting unmapped by the
+  worker or deallocated by the object store.
+  """
 
   def __init__(self, objectid, segmentid, handle):
+    """Initialize an ObjectFixture object."""
     self.objectid = objectid
     self.segmentid = segmentid
     self.handle = handle
 
   def __del__(self):
+    """Unmap the segment when the object goes out of scope."""
     raylib.unmap_object(self.handle, self.segmentid)
 
 class Worker(object):
