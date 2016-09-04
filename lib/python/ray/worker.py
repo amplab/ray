@@ -406,9 +406,7 @@ class Worker(object):
       metadata = np.frombuffer(buff, dtype="byte", offset=8, count=metadata_size)
       data = np.frombuffer(buff, dtype="byte")[8 + metadata_size:]
       serialized = libnumbuf.read_from_buffer(memoryview(data), bytearray(metadata), metadata_offset)
-
       deserialized = libnumbuf.deserialize_list(serialized, ObjectFixture(objectid, segmentid, self.handle))
-
       # Unwrap the object from the list (it was wrapped put_object)
       assert len(deserialized) == 1
       result = deserialized[0]
