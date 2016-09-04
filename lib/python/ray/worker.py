@@ -280,6 +280,11 @@ class RayReusables(object):
     raise Exception("Attempted deletion of attribute {}. Attributes of a RayReusable object may not be deleted.".format(name))
 
 class ObjectFixture(object):
+  """The object referred to by objectid will get unmaped when the fixture
+     is deallocated. In addition, the refcount will be decremented because
+     self.objectid will be deallocated. ObjectFixture is used as the base object
+     for numpy arrays that are contained in the object referred to by objectid
+     and prevents memory that is used by them from getting unmapped."""
 
   def __init__(self, objectid, segmentid, handle):
     self.objectid = objectid
