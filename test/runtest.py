@@ -427,7 +427,7 @@ class ReferenceCountingTest(unittest.TestCase):
 
       if not isinstance(val, bool) and not isinstance(val, np.generic) and val is not None:
         x, objectid_val = check_get_not_deallocated(val)
-        self.assertEqual(ray.scheduler_info()["reference_counts"][objectid_val], 1)
+        # self.assertEqual(ray.scheduler_info()["reference_counts"][objectid_val], 1)
 
     # The following currently segfaults: The second "result = " closes the
     # memory segment as soon as the assignment is done (and the first result
