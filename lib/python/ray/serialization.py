@@ -1,42 +1,81 @@
-import importlib
 import numpy as np
-
 import libraylib as raylib
+import libnumbuf
 
-def to_primitive(obj):
-  if hasattr(obj, "serialize"):
-    primitive_obj = ((type(obj).__module__, type(obj).__name__), obj.serialize())
-  else:
-    primitive_obj = ("primitive", obj)
-  return primitive_obj
+# This field keeps track of a whitelisted set of classes that Ray will
+# serialize.
+whitelisted_classes = {}
+classes_to_pickle = set()
+custom_serializers = {}
+custom_deserializers = {}
 
-def from_primitive(primitive_obj):
-  if primitive_obj[0] == "primitive":
-    obj = primitive_obj[1]
+def class_identifier(typ):
+  return "{}.{}".format(typ.__module__, typ.__name__)
+
+def is_named_tuple(cls):
+  b = cls.__bases__
+  if len(b) != 1 or b[0] != tuple:
+    return False
+  f = getattr(cls, "_fields", None)
+  if not isinstance(f, tuple):
+    return False
+  return all(type(n) == str for n in f)
+
+def add_class_to_whitelist(cls, pickle=False, custom_serializer=None, custom_deserializer=None):
+  class_id = class_identifier(cls)
+  whitelisted_classes[class_id] = cls
+  if pickle:
+    classes_to_pickle.add(class_id)
+  if custom_serializer is not None:
+    custom_serializers[class_id] = custom_serializer
+    custom_deserializers[class_id] = custom_deserializer
+
+# Here we define a custom serializer and deserializer for handling numpy
+# arrays that contain objects.
+def array_custom_serializer(obj):
+  return obj.tolist(), obj.dtype.str
+def array_custom_deserializer(serialized_obj):
+  return np.array(serialized_obj[0], dtype=np.dtype(serialized_obj[1]))
+add_class_to_whitelist(np.ndarray, pickle=False, custom_serializer=array_custom_serializer, custom_deserializer=array_custom_deserializer)
+
+def serialize(obj):
+  # Later, the class identifier should uniquely identify the class.
+  class_id = class_identifier(type(obj))
+  if class_id not in whitelisted_classes:
+    raise Exception("Ray does not know how to serialize the object {}. To fix this, call 'ray.register_class' on the class of the object.".format(obj))
+  if class_id in classes_to_pickle:
+    serialized_obj = {"data": pickling.dumps(obj)}
+  elif class_id in custom_serializers.keys():
+    serialized_obj = {"data": custom_serializers[class_id](obj)}
   else:
-    # This code assumes that the type module.__dict__[type_name] knows how to deserialize itself
-    type_module, type_name = primitive_obj[0]
-    module = importlib.import_module(type_module)
-    obj = module.__dict__[type_name].deserialize(primitive_obj[1])
+    if not hasattr(obj, "__dict__"):
+      raise Exception("We do not know how to serialize the object '{}'".format(obj))
+    serialized_obj = obj.__dict__
+    if is_named_tuple(type(obj)):
+      # Handle the namedtuple case.
+      serialized_obj["_ray_getnewargs_"] = obj.__getnewargs__()
+    elif hasattr(obj, "__slots__"):
+      print "This object has a __slots__ attribute, so a custom serializer must be used."
+      raise Exception("This object has a __slots__ attribute, so a custom serializer must be used.")
+  result = dict(serialized_obj, **{"_pytype_": class_id})
+  return result
+
+def deserialize(serialized_obj):
+  class_id = serialized_obj["_pytype_"]
+  cls = whitelisted_classes[class_id]
+  if class_id in classes_to_pickle:
+    obj = pickling.loads(serialized_obj["data"])
+  elif class_id in custom_deserializers.keys():
+    obj = custom_deserializers[class_id](serialized_obj["data"])
+  else:
+    # In this case, serialized_obj should just be the __dict__ field.
+    if "_ray_getnewargs_" in serialized_obj:
+      obj = cls.__new__(cls, *serialized_obj["_ray_getnewargs_"])
+      serialized_obj.pop("_ray_getnewargs_")
+    else:
+      obj = cls.__new__(cls)
+    serialized_obj.pop("_pytype_")
+    obj.__dict__.update(serialized_obj)
   return obj
 
-def is_arrow_serializable(value):
-  return isinstance(value, np.ndarray) and value.dtype.name in ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float32", "float64"]
-
-def serialize(worker_capsule, obj):
-  primitive_obj = to_primitive(obj)
-  obj_capsule, contained_objectids = raylib.serialize_object(worker_capsule, primitive_obj) # contained_objectids is a list of the objectids contained in obj
-  return obj_capsule, contained_objectids
-
-def deserialize(worker_capsule, capsule):
-  primitive_obj = raylib.deserialize_object(worker_capsule, capsule)
-  return from_primitive(primitive_obj)
-
-def serialize_task(worker_capsule, func_name, args):
-  primitive_args = [(arg if isinstance(arg, raylib.ObjectID) else to_primitive(arg)) for arg in args]
-  return raylib.serialize_task(worker_capsule, func_name, primitive_args)
-
-def deserialize_task(worker_capsule, task):
-  func_name, primitive_args, return_objectids = task
-  args = [(arg if isinstance(arg, raylib.ObjectID) else from_primitive(arg)) for arg in primitive_args]
-  return func_name, args, return_objectids
+libnumbuf.register_callbacks(serialize, deserialize)

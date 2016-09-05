@@ -5,7 +5,6 @@ import time
 import test_functions
 
 class FailureTest(unittest.TestCase):
-
   def testUnknownSerialization(self):
     reload(test_functions)
     ray.init(start_ray_local=True, num_workers=1, driver_mode=ray.SILENT_MODE)
