@@ -16,14 +16,16 @@ def check_serializable(cls):
   if is_named_tuple(cls):
     # This case works.
     return
+  if not hasattr(cls, "__new__"):
+    raise Exception("The class {} does not have a '__new__' attribute, and is probably an old-style class. We do not support this. Please either make it a new-style class by inheriting from 'object', or use 'ray.register_class(cls, pickle=True)'. However, note that pickle is inefficient.".format(cls))
   try:
     obj = cls.__new__(cls)
   except:
-    raise Exception("This class has overridden '__new__', so Ray may not be able to serialize it efficiently. Try using ray.register_class(cls, pickle=True). However, note that pickle is inefficient.")
+    raise Exception("The class {} has overridden '__new__', so Ray may not be able to serialize it efficiently. Try using 'ray.register_class(cls, pickle=True)'. However, note that pickle is inefficient.".format(cls))
   if not hasattr(obj, "__dict__"):
-    raise Exception("Objects of this class do not have a `__dict__` attribute, so Ray cannot serialize it efficiently. Try using ray.register_class(cls, pickle=True). However, note that pickle is inefficient.")
+    raise Exception("Objects of the class {} do not have a `__dict__` attribute, so Ray cannot serialize it efficiently. Try using 'ray.register_class(cls, pickle=True)'. However, note that pickle is inefficient.".format(cls))
   if hasattr(obj, "__slots__"):
-    raise Exception("This class uses '__slots__', so Ray may not be able to serialize it efficiently. Try using ray.register_class(cls, pickle=True). However, note that pickle is inefficient.")
+    raise Exception("The class {} uses '__slots__', so Ray may not be able to serialize it efficiently. Try using 'ray.register_class(cls, pickle=True)'. However, note that pickle is inefficient.".format(cls))
 
 # This field keeps track of a whitelisted set of classes that Ray will
 # serialize.
