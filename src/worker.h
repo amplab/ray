@@ -15,7 +15,7 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 
-#include "ray.grpc.pb.h"
+#include "protos/ray.grpc.pb.h"
 #include "ray/ray.h"
 #include "ipc.h"
 

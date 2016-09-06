@@ -12,8 +12,8 @@
 #include <grpc++/grpc++.h>
 
 #include "ray/ray.h"
-#include "ray.grpc.pb.h"
-#include "types.pb.h"
+#include "protos/ray.grpc.pb.h"
+#include "protos/types.pb.h"
 
 #include "utils.h"
 #include "computation_graph.h"

@@ -6,8 +6,8 @@
 
 #include "ray/ray.h"
 
-#include "graph.pb.h"
-#include "types.pb.h"
+#include "protos/graph.pb.h"
+#include "protos/types.pb.h"
 
 // used to represent the root operation (that is, the driver code)
 const OperationId ROOT_OPERATION = std::numeric_limits<OperationId>::max();

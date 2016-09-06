@@ -60,22 +60,22 @@ set(TYPES_PROTO "${PROTO_PATH}/types.proto")
 set(GENERATED_PROTOBUF_PATH "${CMAKE_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY ${GENERATED_PROTOBUF_PATH})
 
-set(GRAPH_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/graph.pb.cc")
-set(GRAPH_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/graph.pb.h")
+set(GRAPH_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/protos/graph.pb.cc")
+set(GRAPH_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/protos/graph.pb.h")
 
-set(RAY_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/ray.pb.cc")
-set(RAY_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/ray.pb.h")
-set(RAY_GRPC_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/ray.grpc.pb.cc")
-set(RAY_GRPC_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/ray.grpc.pb.h")
+set(RAY_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/protos/ray.pb.cc")
+set(RAY_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/protos/ray.pb.h")
+set(RAY_GRPC_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/protos/ray.grpc.pb.cc")
+set(RAY_GRPC_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/protos/ray.grpc.pb.h")
 
-set(TYPES_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/types.pb.cc")
-set(TYPES_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/types.pb.h")
+set(TYPES_PB_CPP_FILE "${GENERATED_PROTOBUF_PATH}/protos/types.pb.cc")
+set(TYPES_PB_H_FILE "${GENERATED_PROTOBUF_PATH}/protos/types.pb.h")
 
 add_custom_command(
     OUTPUT "${GRAPH_PB_H_FILE}"
            "${GRAPH_PB_CPP_FILE}"
     COMMAND ${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/protobuf/protoc
-    ARGS "--proto_path=${PROTO_PATH}"
+    ARGS "--proto_path=${CMAKE_SOURCE_DIR}"
          "--cpp_out=${GENERATED_PROTOBUF_PATH}"
          "${GRAPH_PROTO}"
     )
@@ -86,11 +86,11 @@ add_custom_command(
            "${RAY_GRPC_PB_H_FILE}"
            "${RAY_GRPC_PB_CPP_FILE}"
     COMMAND ${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/protobuf/protoc
-    ARGS "--proto_path=${PROTO_PATH}"
+    ARGS "--proto_path=${CMAKE_SOURCE_DIR}"
          "--cpp_out=${GENERATED_PROTOBUF_PATH}"
          "${RAY_PROTO}"
     COMMAND ${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/protobuf/protoc
-    ARGS "--proto_path=${PROTO_PATH}"
+    ARGS "--proto_path=${CMAKE_SOURCE_DIR}"
          "--grpc_out=${GENERATED_PROTOBUF_PATH}"
          "--plugin=protoc-gen-grpc=${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/grpc_cpp_plugin"
          "${RAY_PROTO}"
@@ -100,7 +100,7 @@ add_custom_command(
     OUTPUT "${TYPES_PB_H_FILE}"
            "${TYPES_PB_CPP_FILE}"
     COMMAND ${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/protobuf/protoc
-    ARGS "--proto_path=${PROTO_PATH}"
+    ARGS "--proto_path=${CMAKE_SOURCE_DIR}"
          "--cpp_out=${GENERATED_PROTOBUF_PATH}"
          "${TYPES_PROTO}"
     )

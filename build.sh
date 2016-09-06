@@ -13,8 +13,8 @@ else
   exit 1
 fi
 
-mkdir -p "$ROOT_DIR/build"
-pushd "$ROOT_DIR/build"
+mkdir -p "$ROOT_DIR/cmake_build"
+pushd "$ROOT_DIR/cmake_build"
   cmake ..
   make install -j$PARALLEL
 popd

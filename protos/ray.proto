@@ -12,8 +12,8 @@
 
 syntax = "proto3";
 
-import "graph.proto";
-import "types.proto";
+import "protos/graph.proto";
+import "protos/types.proto";
 
 // Scheduler
 

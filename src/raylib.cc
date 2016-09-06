@@ -8,7 +8,7 @@
 #include <numpy/arrayobject.h>
 #include <iostream>
 
-#include "types.pb.h"
+#include "protos/types.pb.h"
 #include "worker.h"
 #include "utils.h"
 

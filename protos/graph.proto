@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-import "types.proto";
+import "protos/types.proto";
 
 message Task {
   string name = 1; // Name of the function call. Must not be empty.
