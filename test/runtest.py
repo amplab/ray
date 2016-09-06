@@ -193,6 +193,23 @@ class WorkerTest(unittest.TestCase):
 
 class APITest(unittest.TestCase):
 
+  def testRegisterClass(self):
+    ray.init(start_ray_local=True, num_workers=0)
+
+    # Check that putting an object of a class that has not been registered
+    # throws an exception.
+    class TempClass(object):
+      pass
+    self.assertRaises(Exception, lambda : ray.put(Foo))
+    # Check that registering a class that Ray cannot serialize efficiently
+    # raises an exception.
+    self.assertRaises(Exception, lambda : ray.register_class(type(True)))
+    # Check that registering the same class with pickle works.
+    ray.register_class(type(float), pickle=True)
+    self.assertEqual(ray.get(ray.put(float)), float)
+
+    ray.worker.cleanup()
+
   def testKeywordArgs(self):
     reload(test_functions)
     ray.init(start_ray_local=True, num_workers=1)

@@ -1,6 +1,29 @@
 import numpy as np
+import pickling
 import libraylib as raylib
 import libnumbuf
+
+def check_serializable(cls):
+  """Throws an exception if Ray cannot serialize this class efficiently.
+
+  Args:
+    cls (type): The class to be serialized.
+
+  Raises:
+    Exception: An exception is raised if Ray cannot serialize this class
+      efficiently.
+  """
+  if is_named_tuple(cls):
+    # This case works.
+    return
+  try:
+    obj = cls.__new__(cls)
+  except:
+    raise Exception("This class has overridden '__new__', so Ray may not be able to serialize it efficiently. Try using ray.register_class(cls, pickle=True). However, note that pickle is inefficient.")
+  if not hasattr(obj, "__dict__"):
+    raise Exception("Objects of this class do not have a `__dict__` attribute, so Ray cannot serialize it efficiently. Try using ray.register_class(cls, pickle=True). However, note that pickle is inefficient.")
+  if hasattr(obj, "__slots__"):
+    raise Exception("This class uses '__slots__', so Ray may not be able to serialize it efficiently. Try using ray.register_class(cls, pickle=True). However, note that pickle is inefficient.")
 
 # This field keeps track of a whitelisted set of classes that Ray will
 # serialize.
@@ -10,9 +33,11 @@ custom_serializers = {}
 custom_deserializers = {}
 
 def class_identifier(typ):
+  """Return a string that identifies this type."""
   return "{}.{}".format(typ.__module__, typ.__name__)
 
 def is_named_tuple(cls):
+  """Return True if cls is a namedtuple and False otherwise."""
   b = cls.__bases__
   if len(b) != 1 or b[0] != tuple:
     return False
@@ -22,6 +47,17 @@ def is_named_tuple(cls):
   return all(type(n) == str for n in f)
 
 def add_class_to_whitelist(cls, pickle=False, custom_serializer=None, custom_deserializer=None):
+  """Add cls to the list of classes that we can serialize.
+
+  Args:
+    cls (type): The class that we can serialize.
+    pickle (bool): True if the serialization should be done with pickle. False
+      if it should be done efficiently with Ray.
+    custom_serializer: This argument is optional, but can be provided to
+      serialize objects of the class in a particular way.
+    custom_deserializer: This argument is optional, but can be provided to
+      deserialize objects of the class in a particular way.
+  """
   class_id = class_identifier(cls)
   whitelisted_classes[class_id] = cls
   if pickle:
@@ -39,7 +75,17 @@ def array_custom_deserializer(serialized_obj):
 add_class_to_whitelist(np.ndarray, pickle=False, custom_serializer=array_custom_serializer, custom_deserializer=array_custom_deserializer)
 
 def serialize(obj):
-  # Later, the class identifier should uniquely identify the class.
+  """This is the callback that will be used by numbuf.
+
+  If numbuf does not know how to serialize an object, it will call this method.
+
+  Args:
+    obj (object): A Python object.
+
+  Returns:
+    A dictionary that has the key "_pyttype_" to identify the class, and
+      contains all information needed to reconstruct the object.
+  """
   class_id = class_identifier(type(obj))
   if class_id not in whitelisted_classes:
     raise Exception("Ray does not know how to serialize the object {}. To fix this, call 'ray.register_class' on the class of the object.".format(obj))
@@ -54,13 +100,21 @@ def serialize(obj):
     if is_named_tuple(type(obj)):
       # Handle the namedtuple case.
       serialized_obj["_ray_getnewargs_"] = obj.__getnewargs__()
-    elif hasattr(obj, "__slots__"):
-      print "This object has a __slots__ attribute, so a custom serializer must be used."
-      raise Exception("This object has a __slots__ attribute, so a custom serializer must be used.")
   result = dict(serialized_obj, **{"_pytype_": class_id})
   return result
 
 def deserialize(serialized_obj):
+  """This is the callback that will be used by numbuf.
+
+  If numbuf encounters a dictionary that contains the key "_pytype_" during
+    deserialization, it will ask this callback to deserialize the object.
+
+  Args:
+    serialized_obj (object): A dictionary that contains the key "_pytype_".
+
+  Returns:
+    A Python object.
+  """
   class_id = serialized_obj["_pytype_"]
   cls = whitelisted_classes[class_id]
   if class_id in classes_to_pickle:
@@ -78,4 +132,5 @@ def deserialize(serialized_obj):
     obj.__dict__.update(serialized_obj)
   return obj
 
+# Register the callbacks with numbuf.
 libnumbuf.register_callbacks(serialize, deserialize)

@@ -761,7 +761,14 @@ def register_class(cls, pickle=False, worker=global_worker):
     pickle (bool): If False then objects of this class will be serialized by
       turning their __dict__ fields into a dictionary. If True, then objects
       of this class will be serialized using pickle.
+
+  Raises:
+    Exception: An exception is raised if pickle=False and the class cannot be
+      efficiently serialized by Ray.
   """
+  # Raise an exception if cls cannot be serialized efficiently by Ray.
+  if not pickle:
+    serialization.check_serializable(cls)
   def register_class_for_serialization(worker):
     serialization.add_class_to_whitelist(cls, pickle=pickle)
   worker.run_function_on_all_workers(register_class_for_serialization)

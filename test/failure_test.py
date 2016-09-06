@@ -17,6 +17,27 @@ class FailureTest(unittest.TestCase):
 
     ray.worker.cleanup()
 
+class TaskSerializationTest(unittest.TestCase):
+  def testReturnAndPassUnknownType(self):
+    ray.init(start_ray_local=True, num_workers=1, driver_mode=ray.SILENT_MODE)
+
+    class Foo(object):
+      pass
+    # Check that returning an unknown type from a remote function raises an
+    # exception.
+    @ray.remote
+    def f():
+      return Foo()
+    self.assertRaises(Exception, lambda : ray.get(f.remote()))
+    # Check that passing an unknown type into a remote function raises an
+    # exception.
+    @ray.remote
+    def g(x):
+      return 1
+    self.assertRaises(Exception, lambda : g.remote(Foo()))
+
+    ray.worker.cleanup()
+
 class TaskStatusTest(unittest.TestCase):
   def testFailedTask(self):
     reload(test_functions)
