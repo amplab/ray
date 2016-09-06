@@ -372,9 +372,9 @@ class Worker(object):
       schema, size, serialized = libnumbuf.serialize_list([value])
       # TODO(pcm): Right now, metadata is serialized twice, change that in the future
       # in the following line, the "8" is for storing the metadata size,
-      # the len(schema) is for storing the metadata and the 4096 is for storing
+      # the len(schema) is for storing the metadata and the 8192 is for storing
       # the metadata in the batch (see INITIAL_METADATA_SIZE in arrow)
-      size = size + 8 + len(schema) + 4096
+      size = size + 8 + len(schema) + 8192
       buff, segmentid = raylib.allocate_buffer(self.handle, objectid, size)
       # write the metadata length
       np.frombuffer(buff, dtype="int64", count=1)[0] = len(schema)
