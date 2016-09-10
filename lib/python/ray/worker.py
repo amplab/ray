@@ -838,35 +838,40 @@ def put(value, worker=global_worker):
   worker.put_object(objectid, value)
   return objectid
 
-def select(objectids, num_objects=0, worker=global_worker):
-  """Return a list of the indices of the objects that are ready.
+def wait(objectids, timeout=None, num_returns=1, worker=global_worker):
+  """Return a list of ready ids and a list of ids that are not ready.
 
-  If num_objects is 0, the function immediately returns the indices of all
-  objects that are ready. If it is set, the function waits until that number of
-  objects is ready and returns that exact number of objectids.
+  If timeout is set, the function terminates either when the requested number 
+  of ids are ready or until the timeout is reached. If it is not set, the function 
+  simply waits until that number of objects is ready and returns that exact number 
+  of objectids.
 
   Args:
     objectids (List[ray.ObjectID]): List of objectids for objects that may or
-      may not be ready.
-    num_objects (int): The number of indices that should be returned.
+                                    may not be ready.
+    timeout (float): The maximum amount of time that should be spent polling 
+                     the scheduler.
+    num_returns (int): The number of objectids that should be returned.
 
   Returns:
-    List of indices in the original list of objects that are ready.
+    List of ready objectids.
+    List of not ready objectids.
   """
   check_connected(worker)
-  if num_objects > len(objectids):
-    raise Exception("num_objects cannot be greater than len(objectids), num_objects is {}, and len(objectids) is {}.".format(num_objects, len(objectids)))
-  ready_ids = raylib.ray_select(worker.handle, objectids)
+  if num_returns < 0:
+    raise Exception("num_returns cannot be less than 0.")
+  if num_returns > len(objectids):
+    raise Exception("num_returns cannot be greater than the length of the input list: num_objects is {}, and the length is {}.".format(num_returns, len(objectids)))
+  start_time = time.time() 
+  ready_indices = raylib.wait(worker.handle, objectids)
   # Polls scheduler until enough objects are ready.
-  while len(ready_ids) < num_objects:
-    ready_ids = raylib.ray_select(worker.handle, objectids)
+  while len(ready_indices) < num_returns and (time.time() - start_time < timeout or timeout is None):
+    ready_indices = raylib.wait(worker.handle, objectids)
     time.sleep(0.1)
-  if num_objects != 0:
-    # Return indices for exactly the requested number of objects.
-    return ready_ids[:num_objects]
-  else:
-    # Return indices for all objects that are ready.
-    return ready_ids
+  # Return indices for exactly the requested number of objects.
+  ready_ids = [objectids[i] for i in ready_indices[:num_returns]]
+  not_ready_ids = [objectids[i] for i in range(len(objectids)) if i not in ready_indices[:num_returns]]
+  return ready_ids, not_ready_ids
 
 def kill_workers(worker=global_worker):
   """Kill all of the workers in the cluster. This does not kill drivers.
