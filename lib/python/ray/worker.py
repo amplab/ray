@@ -417,10 +417,14 @@ class Worker(object):
     for arg in args:
       if isinstance(arg, raylib.ObjectID):
         next_arg = arg
-      elif serialization.is_argument_serializable(arg):
-        next_arg = serialization.serialize_argument(arg)
       else:
-        next_arg = put(arg)
+        serialized_arg = serialization.serialize_argument_if_possible(arg)
+        if serialized_arg is not None:
+          # Serialize the argument and pass it by value.
+          next_arg = serialized_arg
+        else:
+          # Put the objet in the object store under the hood.
+          next_arg = put(arg)
       serialized_args.append(next_arg)
     task_capsule = raylib.serialize_task(self.handle, func_name, serialized_args)
     objectids = raylib.submit_task(self.handle, task_capsule)

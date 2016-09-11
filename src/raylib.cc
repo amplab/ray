@@ -607,18 +607,6 @@ static PyObject* serialize_task(PyObject* self, PyObject* args) {
   std::string output;
   task->SerializeToString(&output);
   int task_size = output.length();
-  // TODO(rkn): Get rid of the below.
-  if (task_size > 1024) {
-    // Large objects should not be passed to tasks by value. Instead, they
-    // should be placed in the object store and passed by object
-    // reference.
-    RAY_LOG(RAY_INFO, "Warning: attempting to serialize a task with size " << task_size << ".");
-    PyErr_SetString(RaySizeError, "serialize_task: This task is too large (greater than 1024 bytes). "
-                                  "Please do not pass large objects by value to remote functions. "
-                                  "Instead, put large objects in the object store and pass them by "
-                                  "object reference to the remote function.");
-    return NULL;
-  }
   return PyCapsule_New(static_cast<void*>(task), "task", &TaskCapsule_Destructor);
 }
 

@@ -25,7 +25,7 @@ def is_argument_serializable(value):
       False otherwise.
   """
   t = type(value)
-  if t is int or t is float or t is bool or value is None:
+  if t is int or t is float or t is long or t is bool or value is None:
     return True
   if t is list:
     if len(value) <= 100:
@@ -57,12 +57,25 @@ def is_argument_serializable(value):
     return len(value) <= 100
   return False
 
-def serialize_argument(value):
+def serialize_argument_if_possible(value):
   """This method serializes arguments that are passed by value.
 
-  The argument will be deserialized by deserialize_argument.
- """
-  return value.__repr__()
+  The result will be deserialized by deserialize_argument.
+
+  Returns:
+    None if value cannot be efficiently serialized or is too big, and otherwise
+      this returns the serialized value as a string.
+  """
+  if not is_argument_serializable(value):
+    # The argument is not obviously serializable using __repr__, so we will not
+    # serialize it.
+    return None
+  serialized_value = value.__repr__()
+  if len(serialized_value) > 1000:
+    # The argument is too big, so we will not pass it by value.
+    return None
+  # Return the serialized argument.
+  return serialized_value
 
 def deserialize_argument(serialized_value):
   """This method deserializes arguments that are passed by value.
