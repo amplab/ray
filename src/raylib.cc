@@ -578,9 +578,21 @@ static PyObject* serialize_task(PyObject* self, PyObject* args) {
   if (PyList_Check(arguments)) {
     for (size_t i = 0, size = PyList_Size(arguments); i < size; ++i) {
       PyObject* element = PyList_GetItem(arguments, i);
-      ObjectID objectid = ((PyObjectID*) element)->id;
-      task->add_arg(objectid);
-      objectids.push_back(objectid);
+      if (PyObject_IsInstance(element, (PyObject*)&PyObjectIDType)) {
+        // Handle the case where the argument to the task is an ObjectID.
+        ObjectID objectid = ((PyObjectID*) element)->id;
+        task->add_arg()->set_objectid(objectid);
+        objectids.push_back(objectid);
+      } else if (PyString_CheckExact(element)) {
+        // Handle the case where the argument to the task is being passed by
+        // value and we receive an argument serialized as a string here.
+        char* buffer;
+        Py_ssize_t length;
+        PyString_AsStringAndSize(element, &buffer, &length);
+        task->add_arg()->set_serialized_arg(std::string(buffer, length));
+      } else {
+        RAY_CHECK(false, "This code should be unreachable.");
+      }
     }
   } else {
     PyErr_SetString(RayError, "serialize_task: second argument needs to be a list");
@@ -595,6 +607,7 @@ static PyObject* serialize_task(PyObject* self, PyObject* args) {
   std::string output;
   task->SerializeToString(&output);
   int task_size = output.length();
+  // TODO(rkn): Get rid of the below.
   if (task_size > 1024) {
     // Large objects should not be passed to tasks by value. Instead, they
     // should be placed in the object store and passed by object
@@ -615,8 +628,13 @@ static PyObject* deserialize_task(PyObject* worker_capsule, const Task& task) {
   int argsize = task.arg_size();
   PyObject* arglist = PyList_New(argsize);
   for (int i = 0; i < argsize; ++i) {
-    PyList_SetItem(arglist, i, make_pyobjectid(worker_capsule, task.arg(i)));
-    objectids.push_back(task.arg(i));
+    if (task.arg(i).serialized_arg().empty()) {
+      PyList_SetItem(arglist, i, make_pyobjectid(worker_capsule, task.arg(i).objectid()));
+      objectids.push_back(task.arg(i).objectid());
+    } else {
+      PyObject* serialized_arg = PyString_FromStringAndSize(task.arg(i).serialized_arg().data(), task.arg(i).serialized_arg().size());
+      PyList_SetItem(arglist, i, serialized_arg);
+    }
   }
   Worker* worker;
   PyObjectToWorker(worker_capsule, &worker);

@@ -3,6 +3,74 @@ import pickling
 import libraylib as raylib
 import libnumbuf
 
+def is_argument_serializable(value):
+  """Checks if value is a composition of primitive types.
+
+  This will return True if the argument is one of the following:
+    - An int
+    - A float
+    - A bool
+    - None
+    - A list of length at most 100 whose elements are serializable
+    - A tuple of length at most 100 whose elements are serializable
+    - A dict of length at most 100 whose keys and values are serializable
+    - A string of length at most 100.
+    - A unicode string of length at most 100.
+
+  Args:
+    value: A Python object.
+
+  Returns:
+    True if the object can be serialized as a composition of primitive types and
+      False otherwise.
+  """
+  t = type(value)
+  if t is int or t is float or t is bool or value is None:
+    return True
+  if t is list:
+    if len(value) <= 100:
+      for element in value:
+        if not is_argument_serializable(element):
+          return False
+      return True
+    else:
+      return False
+  if t is tuple:
+    if len(value) <= 100:
+      for element in value:
+        if not is_argument_serializable(element):
+          return False
+      return True
+    else:
+      return False
+  if t is dict:
+    if len(value) <= 100:
+      for k, v in value.iteritems():
+        if not is_argument_serializable(k) or not is_argument_serializable(v):
+          return False
+      return True
+    else:
+      return False
+  if t is str:
+    return len(value) <= 100
+  if t is unicode:
+    return len(value) <= 100
+  return False
+
+def serialize_argument(value):
+  """This method serializes arguments that are passed by value.
+
+  The argument will be deserialized by deserialize_argument.
+ """
+  return value.__repr__()
+
+def deserialize_argument(serialized_value):
+  """This method deserializes arguments that are passed by value.
+
+  The argument will have been serialized by serialize_argument.
+  """
+  return eval(serialized_value)
+
 def check_serializable(cls):
   """Throws an exception if Ray cannot serialize this class efficiently.
 
