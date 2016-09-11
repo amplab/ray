@@ -431,6 +431,24 @@ class APITest(unittest.TestCase):
 
     ray.worker.cleanup()
 
+  def testComputationGraph(self):
+    ray.init(start_ray_local=True, num_workers=1)
+
+    @ray.remote
+    def f(x):
+      return x
+    @ray.remote
+    def g(x, y):
+      return x, y
+    a = f.remote(1)
+    b = f.remote(1)
+    c = f.remote(a, b)
+    c = f.remote(a, 1)
+    # Make sure that we can produce a computation_graph visualization.
+    ray.visualize_computation_graph(view=False)
+
+    ray.worker.cleanup()
+
 class ReferenceCountingTest(unittest.TestCase):
 
   def testDeallocation(self):
