@@ -15,4 +15,3 @@
 [submodule "thirdparty/ray-common"]
 	path = thirdparty/ray-common
 	url = https://github.com/ray-project/common.git
-	ignore = dirty
