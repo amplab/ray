@@ -42,7 +42,7 @@ if __name__ == "__main__":
   # Store the best parameters, the best accuracy, and all of the results.
   best_params = None
   best_accuracy = 0
-  results = []
+  results = {}
 
   # Randomly generate some hyperparameters, and launch a task for each set.
   for i in range(trials):
@@ -51,14 +51,17 @@ if __name__ == "__main__":
     dropout = np.random.uniform(0, 1)
     stddev = 10 ** np.random.uniform(-5, 5)
     params = {"learning_rate": learning_rate, "batch_size": batch_size, "dropout": dropout, "stddev": stddev}
-    results.append((params, hyperopt.train_cnn_and_compute_accuracy.remote(params, steps, train_images, train_labels, validation_images, validation_labels)))
+    acc_id = hyperopt.train_cnn_and_compute_accuracy.remote(params, steps, train_images, train_labels, validation_images, validation_labels)
+    results[acc_id] = params
 
   # Fetch the results of the tasks and print the results.
   for i in range(trials):
     # Get the index of the first task that completes.
-    index = ray.select([result_id for _, result_id in results], num_objects=1)[0]
+    ready_ids, remaining_ids = ray.wait(results.keys())
     # Process the output of this task and remove it from the list.
-    params, result_id = results.pop(index)
+    result_id = ready_ids[0]
+    params = results[result_id]
+    results = {k:v for k,v in results.items() if k is in remaining_ids}
     accuracy = ray.get(result_id)
     print """We achieve accuracy {:.3}% with
         learning_rate: {:.2}
