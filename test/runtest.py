@@ -374,7 +374,7 @@ class APITest(unittest.TestCase):
     ready_ids, remaining_ids = ray.wait(objectids, num_returns=4)
     self.assertEqual(ready_ids, objectids)
     self.assertEqual(remaining_ids, [])
-    
+
     objectids = [f.remote(1.0), f.remote(0.4), f.remote(0.5), f.remote(0.5)]
     start_time = time.time()
     ready_ids, remaining_ids = ray.wait(objectids, timeout=2, num_returns=4)
@@ -385,8 +385,9 @@ class APITest(unittest.TestCase):
     start_time = time.time()
     ready_ids, remaining_ids = ray.wait(objectids, timeout=5)
     self.assertTrue(time.time() - start_time < 5)
-    self.assertEqual(len(ready_ids),1)
-    self.assertEqual(len(remaining_ids),3)
+    self.assertEqual(len(ready_ids), 1)
+    self.assertEqual(len(remaining_ids), 3)
+
     ray.worker.cleanup()
 
   def testCachingReusables(self):

@@ -838,31 +838,34 @@ def put(value, worker=global_worker):
   worker.put_object(objectid, value)
   return objectid
 
-def wait(objectids, timeout=None, num_returns=1, worker=global_worker):
-  """Return a list of ready ids and a list of ids that are not ready.
+def wait(objectids, num_returns=1, timeout=None, worker=global_worker):
+  """Return a list of IDs that are ready and a list of IDs that are not ready.
 
-  If timeout is set, the function terminates either when the requested number 
-  of ids are ready or until the timeout is reached. If it is not set, the function 
-  simply waits until that number of objects is ready and returns that exact number 
-  of objectids.
+  If timeout is set, the function returns either when the requested number of
+  IDs are ready or when the timeout is reached, whichever occurs first. If it is
+  not set, the function simply waits until that number of objects is ready and
+  returns that exact number of objectids.
+
+  This method returns two lists. The first list consists of object IDs that
+  correspond to objects that are stored in the object store. The second list
+  corresponds to the rest of the object IDs (which may or may not be ready).
 
   Args:
-    objectids (List[ray.ObjectID]): List of objectids for objects that may or
-                                    may not be ready.
-    timeout (float): The maximum amount of time that should be spent polling 
-                     the scheduler.
-    num_returns (int): The number of objectids that should be returned.
+    objectids (List[raylib.ObjectID]): List of object IDs for objects that may
+      or may not be ready.
+    num_returns (int): The number of object IDs that should be returned.
+    timeout (float): The maximum amount of time in seconds that should be spent
+      polling the scheduler.
 
   Returns:
-    List of ready objectids.
-    List of not ready objectids.
+    A list of object IDs that are ready and a list of the remaining object IDs.
   """
   check_connected(worker)
   if num_returns < 0:
     raise Exception("num_returns cannot be less than 0.")
   if num_returns > len(objectids):
     raise Exception("num_returns cannot be greater than the length of the input list: num_objects is {}, and the length is {}.".format(num_returns, len(objectids)))
-  start_time = time.time() 
+  start_time = time.time()
   ready_indices = raylib.wait(worker.handle, objectids)
   # Polls scheduler until enough objects are ready.
   while len(ready_indices) < num_returns and (time.time() - start_time < timeout or timeout is None):
