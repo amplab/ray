@@ -38,7 +38,7 @@ struct WorkerHandle {
   ObjStoreId objstoreid;
   std::string worker_address;
   // This field is initialized to false, and it is set to true after all of the
-  // initial exports have been shipped to this worker, which happens the first.
+  // initial exports have been shipped to this worker.
   bool initial_exports_done;
   OperationId current_task;
 };

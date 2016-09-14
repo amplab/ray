@@ -385,7 +385,7 @@ Status SchedulerService::ReadyForNewTask(ServerContext* context, const ReadyForN
       // Check if the worker has been initialized yet, and if not, then give it
       // all of the exported functions and all of the exported reusable variables.
       if (!(*workers)[workerid].initial_exports_done) {
-        // This only needs to happen for this specific worker and not fo all
+        // This only needs to happen for this specific worker and not for all
         // workers.
         export_everything_to_all_workers_if_necessary(workers);
       }
