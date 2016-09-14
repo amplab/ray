@@ -40,3 +40,7 @@ make static HAS_SYSTEM_PROTOBUF=false HAS_SYSTEM_ZLIB=false HAS_SYSTEM_OPENSSL_A
 echo "building hiredis"
 cd $TP_DIR/hiredis
 make
+
+echo "building Ray common"
+cd $TP_DIR/ray-common
+make

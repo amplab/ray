@@ -15,3 +15,7 @@
 [submodule "thirdparty/hiredis"]
 	path = thirdparty/hiredis
 	url = https://github.com/redis/hiredis.git
+[submodule "thirdparty/ray-common"]
+	path = thirdparty/ray-common
+	url = https://github.com/ray-project/common.git
+	ignore = dirty
