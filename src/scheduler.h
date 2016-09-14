@@ -38,9 +38,8 @@ struct WorkerHandle {
   ObjStoreId objstoreid;
   std::string worker_address;
   // This field is initialized to false, and it is set to true after all of the
-  // exported functions and exported reusable variables have been shipped to
-  // this worker.
-  bool initialized;
+  // initial exports have been shipped to this worker, which happens the first.
+  bool initial_exports_done;
   OperationId current_task;
 };
 
@@ -151,21 +150,10 @@ private:
   void export_remote_function_to_worker(WorkerId workerid, int function_index, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_remote_functions);
   // Export a reusable variable to a worker
   void export_reusable_variable_to_worker(WorkerId workerid, int reusable_variable_index, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<ReusableVar> > > &exported_reusable_variables);
-  // Export all functions to run to a worker. This is used when a new worker
-  // registers and is protected by the workers lock (which is passed in) to
-  // ensure that no other exports are exported to the worker while this method
-  // is being called.
-  void export_all_functions_to_run_to_worker(WorkerId workerid, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_functions_to_run);
-  // Export all reusable variables to a worker. This is used when a new worker
-  // registers and is protected by the workers lock (which is passed in) to
-  // ensure that no other exports are exported to the worker while this method
-  // is being called.
-  void export_all_remote_functions_to_worker(WorkerId workerid, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_remote_functions);
-  // Export all remote functions to a worker. This is used when a new worker
-  // registers and is protected by the workers lock (which is passed in) to
-  // ensure that no other exports are exported to the worker while this method
-  // is being called.
-  void export_all_reusable_variables_to_worker(WorkerId workerid, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<ReusableVar> > > &exported_reusable_variables);
+  // Export all exports to all workers that need them. This happens the first
+  // time any export would be exported to a worker or when a worker first calls
+  // ReadyForNewTask.
+  void export_everything_to_all_workers_if_necessary(MySynchronizedPtr<std::vector<WorkerHandle> > &workers);
 
   template<class T>
   MySynchronizedPtr<T> get(Synchronized<T>& my_field, const char* name,unsigned int line_number);

@@ -279,7 +279,7 @@ Status SchedulerService::RegisterWorker(ServerContext* context, const RegisterWo
     (*workers)[workerid].objstoreid = objstoreid;
     (*workers)[workerid].worker_stub = WorkerService::NewStub(channel);
     (*workers)[workerid].worker_address = worker_address;
-    (*workers)[workerid].initialized = false;
+    (*workers)[workerid].initial_exports_done = false;
     if (is_driver) {
       (*workers)[workerid].current_task = ROOT_OPERATION; // We use this field to identify which workers are drivers.
     } else {
@@ -384,16 +384,10 @@ Status SchedulerService::ReadyForNewTask(ServerContext* context, const ReadyForN
     {
       // Check if the worker has been initialized yet, and if not, then give it
       // all of the exported functions and all of the exported reusable variables.
-      if (!(*workers)[workerid].initialized) {
-        // This should only happen once.
-        // Import all functions to run on the worker.
-        export_all_functions_to_run_to_worker(workerid, workers, GET(exported_functions_to_run_));
-        // Import all remote functions on the worker.
-        export_all_remote_functions_to_worker(workerid, workers, GET(exported_remote_functions_));
-        // Import all reusable variables on the worker.
-        export_all_reusable_variables_to_worker(workerid, workers, GET(exported_reusable_variables_));
-        // Mark the worker as initialized.
-        (*workers)[workerid].initialized = true;
+      if (!(*workers)[workerid].initial_exports_done) {
+        // This only needs to happen for this specific worker and not fo all
+        // workers.
+        export_everything_to_all_workers_if_necessary(workers);
       }
     }
     (*workers)[workerid].current_task = NO_OPERATION; // clear operation ID
@@ -544,6 +538,7 @@ Status SchedulerService::KillWorkers(ServerContext* context, const KillWorkersRe
 
 Status SchedulerService::RunFunctionOnAllWorkers(ServerContext* context, const RunFunctionOnAllWorkersRequest* request, AckReply* reply) {
   auto workers = GET(workers_);
+  export_everything_to_all_workers_if_necessary(workers);
   auto exported_functions_to_run = GET(exported_functions_to_run_);
   // TODO(rkn): Does this do a deep copy?
   exported_functions_to_run->push_back(std::unique_ptr<Function>(new Function(request->function())));
@@ -557,6 +552,7 @@ Status SchedulerService::RunFunctionOnAllWorkers(ServerContext* context, const R
 
 Status SchedulerService::ExportRemoteFunction(ServerContext* context, const ExportRemoteFunctionRequest* request, AckReply* reply) {
   auto workers = GET(workers_);
+  export_everything_to_all_workers_if_necessary(workers);
   auto exported_remote_functions = GET(exported_remote_functions_);
   // TODO(rkn): Does this do a deep copy?
   exported_remote_functions->push_back(std::unique_ptr<Function>(new Function(request->function())));
@@ -570,6 +566,7 @@ Status SchedulerService::ExportRemoteFunction(ServerContext* context, const Expo
 
 Status SchedulerService::ExportReusableVariable(ServerContext* context, const ExportReusableVariableRequest* request, AckReply* reply) {
   auto workers = GET(workers_);
+  export_everything_to_all_workers_if_necessary(workers);
   auto exported_reusable_variables = GET(exported_reusable_variables_);
   // TODO(rkn): Does this do a deep copy?
   exported_reusable_variables->push_back(std::unique_ptr<ReusableVar>(new ReusableVar(request->reusable_variable())));
@@ -1110,21 +1107,28 @@ void SchedulerService::export_reusable_variable_to_worker(WorkerId workerid, int
   RAY_CHECK_GRPC((*workers)[workerid].worker_stub->ImportReusableVariable(&context, request, &reply));
 }
 
-void SchedulerService::export_all_functions_to_run_to_worker(WorkerId workerid, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_functions_to_run) {
-  for (int i = 0; i < exported_functions_to_run->size(); ++i) {
-    export_function_to_run_to_worker(workerid, i, workers, exported_functions_to_run);
-  }
-}
-
-void SchedulerService::export_all_remote_functions_to_worker(WorkerId workerid, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<Function> > > &exported_remote_functions) {
-  for (int i = 0; i < exported_remote_functions->size(); ++i) {
-    export_remote_function_to_worker(workerid, i, workers, exported_remote_functions);
-  }
-}
-
-void SchedulerService::export_all_reusable_variables_to_worker(WorkerId workerid, MySynchronizedPtr<std::vector<WorkerHandle> > &workers, const MySynchronizedPtr<std::vector<std::unique_ptr<ReusableVar> > > &exported_reusable_variables) {
-  for (int i = 0; i < exported_reusable_variables->size(); ++i) {
-    export_reusable_variable_to_worker(workerid, i, workers, exported_reusable_variables);
+void SchedulerService::export_everything_to_all_workers_if_necessary(MySynchronizedPtr<std::vector<WorkerHandle> > &workers) {
+  auto exported_functions_to_run = GET(exported_functions_to_run_);
+  auto exported_remote_functions = GET(exported_remote_functions_);
+  auto exported_reusable_variables = GET(exported_reusable_variables_);
+  for (size_t workerid = 0; workerid < workers->size(); ++workerid) {
+    if ((*workers)[workerid].current_task != ROOT_OPERATION && !(*workers)[workerid].initial_exports_done) {
+      // Export the functions to run to the worker.
+      for (int i = 0; i < exported_functions_to_run->size(); ++i) {
+        export_function_to_run_to_worker(workerid, i, workers, exported_functions_to_run);
+      }
+      // Export the remote functions to the worker.
+      for (int i = 0; i < exported_remote_functions->size(); ++i) {
+        export_remote_function_to_worker(workerid, i, workers, exported_remote_functions);
+      }
+      // Export the reusable variables to the worker.
+      for (int i = 0; i < exported_reusable_variables->size(); ++i) {
+        export_reusable_variable_to_worker(workerid, i, workers, exported_reusable_variables);
+      }
+      // Record that we have done this so we do not need to do it again for this
+      // worker.
+      (*workers)[workerid].initial_exports_done = true;
+    }
   }
 }
 
