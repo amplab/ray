@@ -41,17 +41,22 @@ To extract the weights and set the weights, we need to write a couple lines of
 boilerplate code.
 
 ```python
-assignment_placeholders = []
-assignment_nodes = []
-for var in tf.trainable_variables():
-  assignment_placeholders.append(tf.placeholder(var.value().dtype, var.get_shape().as_list()))
-  assignment_nodes.append(var.assign(assignment_placeholders[-1]))
+def get_and_set_weights_methods():
+  assignment_placeholders = []
+  assignment_nodes = []
+  for var in tf.trainable_variables():
+    assignment_placeholders.append(tf.placeholder(var.value().dtype, var.get_shape().as_list()))
+    assignment_nodes.append(var.assign(assignment_placeholders[-1]))
 
-def get_weights():
-  return [v.eval(session=sess) for v in tf.trainable_variables()]
+  def get_weights():
+    return [v.eval(session=sess) for v in tf.trainable_variables()]
 
-def set_weights(new_weights):
-  sess.run(assignment_nodes, feed_dict={p: w for p, w in zip(assignment_placeholders, new_weights)})
+  def set_weights(new_weights):
+    sess.run(assignment_nodes, feed_dict={p: w for p, w in zip(assignment_placeholders, new_weights)})
+
+  return get_weights, set_weights
+
+get_weights, set_weights = get_and_set_weights_methods()
 ```
 
 Now we can use these methods to extract the weights, and place them back in the
@@ -113,17 +118,22 @@ def net_vars_initializer():
   sess = tf.Session()
 
   # Additional code for setting and getting the weights.
-  assignment_placeholders = []
-  assignment_nodes = []
-  for var in tf.trainable_variables():
-    assignment_placeholders.append(tf.placeholder(var.value().dtype, var.get_shape().as_list()))
-    assignment_nodes.append(var.assign(assignment_placeholders[-1]))
+  def get_and_set_weights_methods():
+    assignment_placeholders = []
+    assignment_nodes = []
+    for var in tf.trainable_variables():
+      assignment_placeholders.append(tf.placeholder(var.value().dtype, var.get_shape().as_list()))
+      assignment_nodes.append(var.assign(assignment_placeholders[-1]))
 
-  def get_weights():
-    return [v.eval(session=sess) for v in tf.trainable_variables()]
+    def get_weights():
+      return [v.eval(session=sess) for v in tf.trainable_variables()]
 
-  def set_weights(new_weights):
-    sess.run(assignment_nodes, feed_dict={p: w for p, w in zip(assignment_placeholders, new_weights)})
+    def set_weights(new_weights):
+      sess.run(assignment_nodes, feed_dict={p: w for p, w in zip(assignment_placeholders, new_weights)})
+
+    return get_weights, set_weights
+
+  get_weights, set_weights = get_and_set_weights_methods()
 
   return get_weights, set_weights, sess, train, loss, x_data, y_data, init
 

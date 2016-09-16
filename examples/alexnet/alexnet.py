@@ -227,17 +227,22 @@ def net_initialization():
   # and to set the network weights (from a list of numpy arrays), use the
   # methods get_weights and set_weights. This can be done from within a remote
   # function or on the driver.
-  assignment_placeholders = []
-  assignment_nodes = []
-  for var in tf.trainable_variables():
-    assignment_placeholders.append(tf.placeholder(var.value().dtype, var.get_shape().as_list()))
-    assignment_nodes.append(var.assign(assignment_placeholders[-1]))
+  def get_and_set_weights_methods():
+    assignment_placeholders = []
+    assignment_nodes = []
+    for var in tf.trainable_variables():
+      assignment_placeholders.append(tf.placeholder(var.value().dtype, var.get_shape().as_list()))
+      assignment_nodes.append(var.assign(assignment_placeholders[-1]))
 
-  def get_weights():
-    return [v.eval(session=sess) for v in tf.trainable_variables()]
+    def get_weights():
+      return [v.eval(session=sess) for v in tf.trainable_variables()]
 
-  def set_weights(new_weights):
-    sess.run(assignment_nodes, feed_dict={p: w for p, w in zip(assignment_placeholders, new_weights)})
+    def set_weights(new_weights):
+      sess.run(assignment_nodes, feed_dict={p: w for p, w in zip(assignment_placeholders, new_weights)})
+
+    return get_weights, set_weights
+
+  get_weights, set_weights = get_and_set_weights_methods()
 
   return comp_grads, sess, application, accuracy, images, y_true, dropout, placeholders, init_all_variables, get_weights, set_weights
 
