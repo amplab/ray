@@ -354,6 +354,8 @@ class Worker(object):
       eventually does call connect, if it is a driver, it will export these
       functions to the scheduler. If cached_remote_functions is None, that means
       that connect has been called already.
+    cached_functions_to_run (List): A list of functions to run on all of the
+      workers that should be exported as soon as connect is called.
   """
 
   def __init__(self):
@@ -362,6 +364,7 @@ class Worker(object):
     self.handle = None
     self.mode = None
     self.cached_remote_functions = []
+    self.cached_functions_to_run = []
 
   def set_mode(self, mode):
     """Set the mode of the worker.
@@ -485,12 +488,8 @@ class Worker(object):
     objectids = raylib.submit_task(self.handle, task_capsule)
     return objectids
 
-  def run_function_on_all_workers(self, function):
-    """Run arbitrary code on all of the workers.
-
-    This function will first be run on the driver, and then it will be exported
-    to all of the workers to be run. It will also be run on any new workers that
-    register later.
+  def export_function_to_run_on_all_workers(self, function):
+    """Export this function and run it on all workers.
 
     Args:
       function (Callable): The function to run on all of the workers. It should
@@ -499,11 +498,34 @@ class Worker(object):
     """
     if self.mode not in [raylib.SCRIPT_MODE, raylib.SILENT_MODE, raylib.PYTHON_MODE]:
       raise Exception("run_function_on_all_workers can only be called on a driver.")
-    # First run the function on the driver.
-    function(self)
-    # Then run the function on all of the workers.
+    # Run the function on all of the workers.
     if self.mode in [raylib.SCRIPT_MODE, raylib.SILENT_MODE]:
       raylib.run_function_on_all_workers(self.handle, pickling.dumps(function))
+
+
+  def run_function_on_all_workers(self, function):
+    """Run arbitrary code on all of the workers.
+
+    This function will first be run on the driver, and then it will be exported
+    to all of the workers to be run. It will also be run on any new workers that
+    register later. If ray.init has not been called yet, then cache the function
+    and export it later.
+
+    Args:
+      function (Callable): The function to run on all of the workers. It should
+        not take any arguments. If it returns anything, its return values will
+        not be used.
+    """
+    if self.mode not in [None, raylib.SCRIPT_MODE, raylib.SILENT_MODE, raylib.PYTHON_MODE]:
+      raise Exception("run_function_on_all_workers can only be called on a driver.")
+    # First run the function on the driver.
+    function(self)
+    # If ray.init has not been called yet, then cache the function and export it
+    # when connect is called. Otherwise, run the function on all workers.
+    if self.mode is None:
+      self.cached_functions_to_run.append(function)
+    else:
+      self.export_function_to_run_on_all_workers(function)
 
 global_worker = Worker()
 """Worker: The global Worker object for this worker process.
@@ -802,6 +824,9 @@ def connect(node_ip_address, scheduler_address, objstore_address=None, worker=gl
     current_directory = os.path.abspath(os.path.curdir)
     worker.run_function_on_all_workers(lambda worker: sys.path.insert(1, script_directory))
     worker.run_function_on_all_workers(lambda worker: sys.path.insert(1, current_directory))
+    # Export cached functions_to_run.
+    for function in worker.cached_functions_to_run:
+      worker.export_function_to_run_on_all_workers(function)
     # Export cached remote functions to the workers.
     for function_name, function_to_export in worker.cached_remote_functions:
       raylib.export_remote_function(worker.handle, function_name, function_to_export)
@@ -810,6 +835,7 @@ def connect(node_ip_address, scheduler_address, objstore_address=None, worker=gl
       _export_reusable_variable(name, reusable_variable)
   # Initialize the serialization library.
   initialize_numbuf()
+  worker.cached_functions_to_run = None
   worker.cached_remote_functions = None
   reusables._cached_reusables = None
 
@@ -821,6 +847,7 @@ def disconnect(worker=global_worker):
   # Reset the list of cached remote functions so that if more remote functions
   # are defined and then connect is called again, the remote functions will be
   # exported. This is mostly relevant for the tests.
+  worker.cached_functions_to_run = []
   worker.cached_remote_functions = []
   reusables._cached_reusables = []
 
@@ -841,6 +868,11 @@ def register_class(cls, pickle=False, worker=global_worker):
     Exception: An exception is raised if pickle=False and the class cannot be
       efficiently serialized by Ray.
   """
+  # If the worker is not a driver, then return. We do this so that Python
+  # modules can register classes and these modules can be imported on workers
+  # without any trouble.
+  if worker.mode == raylib.WORKER_MODE:
+    return
   # Raise an exception if cls cannot be serialized efficiently by Ray.
   if not pickle:
     serialization.check_serializable(cls)

@@ -451,6 +451,43 @@ class APITest(unittest.TestCase):
 
     ray.worker.cleanup()
 
+  def testCachingFunctionsToRun(self):
+    # Test that we export functions to run on all workers before the driver is connected.
+    def f(worker):
+      sys.path.append(1)
+    ray.worker.global_worker.run_function_on_all_workers(f)
+    def f(worker):
+      sys.path.append(2)
+    ray.worker.global_worker.run_function_on_all_workers(f)
+    def g(worker):
+      sys.path.append(3)
+    ray.worker.global_worker.run_function_on_all_workers(g)
+    def f(worker):
+      sys.path.append(4)
+    ray.worker.global_worker.run_function_on_all_workers(f)
+
+    ray.init(start_ray_local=True, num_workers=2)
+
+    @ray.remote
+    def get_state():
+      time.sleep(1)
+      return sys.path[-4], sys.path[-3], sys.path[-2], sys.path[-1]
+
+    res1 = get_state.remote()
+    res2 = get_state.remote()
+    self.assertEqual(ray.get(res1), (1, 2, 3, 4))
+    self.assertEqual(ray.get(res2), (1, 2, 3, 4))
+
+    # Clean up the path on the workers.
+    def f(worker):
+      sys.path.pop()
+      sys.path.pop()
+      sys.path.pop()
+      sys.path.pop()
+    ray.worker.global_worker.run_function_on_all_workers(f)
+
+    ray.worker.cleanup()
+
   def testRunningFunctionOnAllWorkers(self):
     ray.init(start_ray_local=True, num_workers=1)
 
@@ -493,7 +530,6 @@ class ReferenceCountingTest(unittest.TestCase):
     for module in [ra.core, ra.random, ra.linalg, da.core, da.random, da.linalg]:
       reload(module)
     ray.init(start_ray_local=True, num_workers=1)
-    ray.register_class(da.DistArray)
 
     def check_not_deallocated(object_ids):
       reference_counts = ray.scheduler_info()["reference_counts"]
