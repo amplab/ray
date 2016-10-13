@@ -638,6 +638,43 @@ class PythonModeTest(unittest.TestCase):
 
     ray.worker.cleanup()
 
+  def testReusableVariablesInPythonMode(self):
+    reload(test_functions)
+    ray.init(start_ray_local=True, driver_mode=ray.PYTHON_MODE)
+
+    def l_init():
+      return []
+    def l_reinit(l):
+      return []
+    ray.reusables.l = ray.Reusable(l_init, l_reinit)
+
+    @ray.remote
+    def use_l():
+      l = ray.reusables.l
+      l.append(1)
+      return l
+
+    # Get the local copy of the reusable variable. This should be stateful.
+    l = ray.reusables.l
+    assert_equal(l, [])
+
+    # Make sure the remote function does what we expect.
+    assert_equal(ray.get(use_l.remote()), [1])
+    assert_equal(ray.get(use_l.remote()), [1])
+
+    # Make sure the local copy of the reusable variable has not been mutated.
+    assert_equal(l, [])
+    l = ray.reusables.l
+    assert_equal(l, [])
+
+    # Make sure that running a remote function does not reset the state of the
+    # local copy of the reusable variable.
+    l.append(2)
+    assert_equal(ray.get(use_l.remote()), [1])
+    assert_equal(l, [2])
+
+    ray.worker.cleanup()
+
 class PythonCExtensionTest(unittest.TestCase):
 
   def testReferenceCountNone(self):
@@ -754,6 +791,44 @@ class ReusablesTest(unittest.TestCase):
     self.assertEqual(ray.get(use_qux.remote()), 0)
     self.assertEqual(ray.get(use_qux.remote()), 1)
     self.assertEqual(ray.get(use_qux.remote()), 2)
+
+    ray.worker.cleanup()
+
+  def testUsingReusablesOnDriver(self):
+    ray.init(start_ray_local=True, num_workers=1)
+
+    # Test that we can add a variable to the key-value store.
+
+    def foo_initializer():
+      return []
+    def foo_reinitializer(foo):
+      return []
+
+    ray.reusables.foo = ray.Reusable(foo_initializer, foo_reinitializer)
+
+    @ray.remote
+    def use_foo():
+      foo = ray.reusables.foo
+      foo.append(1)
+      return foo
+
+    # Check that running a remote function does not reset the reusable variable
+    # on the driver.
+    foo = ray.reusables.foo
+    self.assertEqual(foo, [])
+    foo.append(2)
+    self.assertEqual(foo, [2])
+    foo.append(3)
+    self.assertEqual(foo, [2, 3])
+
+    self.assertEqual(ray.get(use_foo.remote()), [1])
+    self.assertEqual(ray.get(use_foo.remote()), [1])
+    self.assertEqual(ray.get(use_foo.remote()), [1])
+
+    # Check that the copy of foo on the driver has not changed.
+    self.assertEqual(foo, [2, 3])
+    foo = ray.reusables.foo
+    self.assertEqual(foo, [2, 3])
 
     ray.worker.cleanup()
 
