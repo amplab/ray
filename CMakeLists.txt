@@ -78,6 +78,7 @@ add_custom_command(
     ARGS "--proto_path=${PROTO_PATH}"
          "--cpp_out=${GENERATED_PROTOBUF_PATH}"
          "${GRAPH_PROTO}"
+    DEPENDS ${GRAPH_PROTO}
     )
 
 add_custom_command(
@@ -94,6 +95,7 @@ add_custom_command(
          "--grpc_out=${GENERATED_PROTOBUF_PATH}"
          "--plugin=protoc-gen-grpc=${CMAKE_SOURCE_DIR}/thirdparty/grpc/bins/opt/grpc_cpp_plugin"
          "${RAY_PROTO}"
+    DEPENDS ${RAY_PROTO}
     )
 
 add_custom_command(
@@ -103,6 +105,7 @@ add_custom_command(
     ARGS "--proto_path=${PROTO_PATH}"
          "--cpp_out=${GENERATED_PROTOBUF_PATH}"
          "${TYPES_PROTO}"
+    DEPENDS ${TYPES_PROTO}
     )
 
 set(GENERATED_PROTOBUF_FILES
