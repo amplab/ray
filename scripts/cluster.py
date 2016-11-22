@@ -151,22 +151,20 @@ class RayCluster(object):
     """
     scripts_directory = os.path.join(self.installation_directory, "ray/scripts")
     # Start the scheduler
-    # The triple backslashes are used for two rounds of escaping, something like \\\" -> \" -> "
-    start_scheduler_command = """
+    start_scheduler_command = r"""
       cd "{}";
       source ../setup-env.sh;
-      python -c "import ray; ray.services.start_scheduler(\\\"{}:10001\\\", cleanup=False)" > start_scheduler.out 2> start_scheduler.err < /dev/null &
+      python -c "import ray; ray.services.start_scheduler(\"{}:10001\", cleanup=False)" > start_scheduler.out 2> start_scheduler.err < /dev/null &
     """.format(scripts_directory, self.node_private_ip_addresses[0])
     self._run_command_over_ssh(self.node_ip_addresses[0], start_scheduler_command)
 
     # Start the workers on each node
-    # The triple backslashes are used for two rounds of escaping, something like \\\" -> \" -> "
     start_workers_commands = []
     for i, node_ip_address in enumerate(self.node_ip_addresses):
-      start_workers_command = """
+      start_workers_command = r"""
         cd "{}";
         source ../setup-env.sh;
-        python -c "import ray; ray.services.start_node(\\\"{}:10001\\\", \\\"{}\\\", {})" > start_workers.out 2> start_workers.err < /dev/null &
+        python -c "import ray; ray.services.start_node(\"{}:10001\", "{}", {})" > start_workers.out 2> start_workers.err < /dev/null &
       """.format(scripts_directory, self.node_private_ip_addresses[0], self.node_private_ip_addresses[i], num_workers_per_node)
       start_workers_commands.append(start_workers_command)
     self.run_command_over_ssh_on_all_nodes_in_parallel(start_workers_commands)
