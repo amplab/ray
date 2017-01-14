@@ -37,6 +37,6 @@ echo "building GRPC"
 cd $TP_DIR/grpc
 make static HAS_SYSTEM_PROTOBUF=false HAS_SYSTEM_ZLIB=false HAS_SYSTEM_OPENSSL_ALPN=false HAS_SYSTEM_OPENSSL_NPN=false -j$PARALLEL
 
-echo "building hiredis"
-cd $TP_DIR/hiredis
+echo "building Ray common"
+cd $TP_DIR/ray-common
 make
